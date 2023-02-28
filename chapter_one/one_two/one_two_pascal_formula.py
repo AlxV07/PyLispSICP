@@ -2,7 +2,7 @@ def pascal_iter(current_level, max_level, data):
     if len(data) == 0:
         x = [1]
     else:
-        x = [0 for i in range(len(data)+1)]
+        x = [0 for _ in range(len(data) + 1)]
         for i in range(len(data)):
             x[i] += data[i]
             x[i+1] += data[i]

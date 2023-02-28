@@ -1,12 +1,11 @@
-def fib(n):
-    return fib_iter(1, 0, n)
+# Fibonacci formula using linear iteration
+def better_fib(n):
+    return better_fib_iter(1, 0, n)
 
 
-def fib_iter(a, b, count):
+def better_fib_iter(a, b, count):
     if count == 0:
         return b
     else:
-        return fib_iter(a+b, a, count-1)
+        return better_fib_iter(a + b, a, count - 1)
 
-
-print(fib(6))
