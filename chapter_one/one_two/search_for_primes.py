@@ -1,3 +1,4 @@
+# A formula to search through a range of numbers and print the found prime numbers
 from timed_prime_test import timed_prime_test
 
 

@@ -1,3 +1,4 @@
+# A linear iterative formula to print the layers of the pascal triangle
 def pascal_iter(current_level, max_level, data):
     if len(data) == 0:
         x = [1]

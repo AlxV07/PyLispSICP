@@ -1,3 +1,4 @@
+# A method using Newton's formula to find the sqrt of a number
 def sqrt(x):
     def good_enough(guess, x) -> bool:
         return abs(x - (guess * guess)) < 0.001

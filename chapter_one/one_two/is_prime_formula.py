@@ -1,3 +1,4 @@
+# Formula to check if a number n is prime
 def smallest_divisor(n):
     if n <= 1:
         return n - 1

@@ -1,3 +1,5 @@
+# A method to time how fast it takes to calculate whether a number is prime;
+# comparing the methods fast_prime and is_prime
 import time
 
 from chapter_one.one_two.fast_prime import fast_prime

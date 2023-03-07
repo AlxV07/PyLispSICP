@@ -1,3 +1,4 @@
+# Fermat's theorem
 def exp_mod(base, exp, m):
     if exp == 0:
         return 1

@@ -1,3 +1,4 @@
+# A faster formula to check if a number n is prime; uses probability
 from fermat_theorem import fermat_theorem
 
 
