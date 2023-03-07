@@ -1,4 +1,4 @@
-from one_two_fermat_theorem import fermat_theorem
+from fermat_theorem import fermat_theorem
 
 
 def fast_prime(n, times):

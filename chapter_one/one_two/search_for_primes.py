@@ -1,4 +1,4 @@
-from one_two_timed_prime_test import timed_prime_test
+from timed_prime_test import timed_prime_test
 
 
 def search_for_primes(begin, end):

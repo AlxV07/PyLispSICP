@@ -1,7 +1,7 @@
 import time
 
-from chapter_one.one_two.one_two_fast_prime import fast_prime
-from one_two_is_prime_formula import is_prime
+from chapter_one.one_two.fast_prime import fast_prime
+from is_prime_formula import is_prime
 
 
 def timed_prime_test(n):
