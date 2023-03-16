@@ -1,8 +1,8 @@
-from mock_scheme_lisp_pair import Pair, car, cdr
+from mock_scheme_lisp_pair import cons, car, cdr
 
 
 def make_rat(x, y):
-    return Pair(x, y)
+    return cons(x, y)
 
 
 def numerator(z):
