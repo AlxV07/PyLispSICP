@@ -1,18 +1,27 @@
-def cons(x, y):
-    def dispatch(m):
-        if m == 0:
-            return x
-        elif m == 1:
-            return y
-        else:
-            raise ValueError()
+class Pair:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-    return lambda p: dispatch(p)
+    def dispatch(self, m):
+        if m == 0:
+            return self.x
+        elif m == 1:
+            return self.y
+        else:
+            raise Exception()
+
+    def __str__(self):
+        return str(self.x) + ", " + str(self.y)
+
+
+def cons(x, y):
+    return Pair(x, y)
 
 
 def car(z):
-    return z(0)
+    return z.dispatch(0)
 
 
 def cdr(z):
-    return z(1)
+    return z.dispatch(1)
