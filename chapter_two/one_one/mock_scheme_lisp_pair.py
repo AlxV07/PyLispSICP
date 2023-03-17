@@ -12,7 +12,7 @@ class Pair:
             raise Exception()
 
     def __str__(self):
-        return str(self.x) + ", " + str(self.y)
+        return "{0}, {1}".format(self.x, self.y)
 
 
 def cons(x, y):
