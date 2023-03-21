@@ -20,8 +20,14 @@ def cons(x, y):
 
 
 def car(z):
-    return z.dispatch(0)
+    if type(z) == Pair:
+        return z.dispatch(0)
+    else:
+        return z
 
 
 def cdr(z):
-    return z.dispatch(1)
+    if type(z) == Pair:
+        return z.dispatch(1)
+    else:
+        return None
