@@ -9,6 +9,8 @@ For example:
 
 #### Answer:
 
+Note: Methods starting with "mock" and the methods `car` & `cdr` were written by me and can be found somewhere in this project. They are imitations of the Scheme Lisp built-in methods, and they work in the same way as the originals.
+
 ```
 def last_pair(x):
     return mock_lisp_list_ref(x, mock_lisp_list_length(x) - 1)

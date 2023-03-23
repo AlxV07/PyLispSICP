@@ -8,6 +8,8 @@ Define a procedure `reverse` that takes a list as an argument and returns a list
 
 #### Answer:
 
+Note: Methods starting with "mock" and the methods `car` & `cdr` were written by me and can be found somewhere in this project. They are imitations of the Scheme Lisp built-in methods, and they work in the same way as the originals.
+
 ```
 def reverse(l):
     if mock_lisp_list_length(l) == 1:
