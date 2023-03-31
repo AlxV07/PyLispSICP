@@ -35,3 +35,12 @@ def mock_lisp_list_append(i, j):
         return j
     else:
         return cons(car(i), (mock_lisp_list_append(cdr(i), j)))
+
+
+def mock_lisp_list_count_leaves(x):
+    if x is None:
+        return 0
+    elif x is not Pair:
+        return 1
+    else:
+        return mock_lisp_list_count_leaves(car(x)), mock_lisp_list_count_leaves(cdr(x))
