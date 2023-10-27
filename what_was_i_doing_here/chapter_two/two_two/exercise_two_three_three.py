@@ -14,8 +14,8 @@ def append(seq1, seq2):
 def length(seq):
     return accumulate((???), 0, seq)
 """
-from chapter_two.one_one.mock_scheme_lisp_pair import cons
-from chapter_two.two_two.accumulate_process import accumulate
+from what_was_i_doing_here.chapter_two.one_one.mock_scheme_lisp_pair import cons
+from what_was_i_doing_here.chapter_two.two_two.accumulate_process import accumulate
 
 
 # 1.

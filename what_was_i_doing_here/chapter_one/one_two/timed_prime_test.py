@@ -2,7 +2,7 @@
 # comparing the methods fast_prime and is_prime
 import time
 
-from chapter_one.one_two.fast_prime import fast_prime
+from what_was_i_doing_here.chapter_one.one_two.fast_prime import fast_prime
 from is_prime_formula import is_prime
 
 
