@@ -1,4 +1,4 @@
-# SICP_Python_Translation
+# SICPPythonTranslation
 A Python translation of the (retired) MIT Computer Science book, "Structure and Interpretation of Computer Programs, Second Edition", written by Harold Abelson, Gerald Jay Sussman, & Julie Sussman.
 
 
