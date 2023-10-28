@@ -9,7 +9,8 @@ class Lexer:
         self.atom = ''
 
     def lex(self, code: str) -> list:
-        code = code.replace('\n', ' ').replace('  ', ' ').strip()
+        code = code.strip().replace('  ', ' ').split('\n')
+        code = ' '.join(map(lambda line: line if ';;' not in line else line[:line.index(';;')], code))
         self.result.clear()
         for char in code:
             if char == ' ':
@@ -82,23 +83,21 @@ class Parser:
         return result
 
 
-class Pair:
-    def __init__(self, car, cdr):
-        self.car = car
-        self.cdr = cdr
-
-
-class Function:
-    def __init__(self, name, parameters, expression):
-        self.name = name
-        self.parameters = parameters
-        self.expression = expression
-
-    def __str__(self):
-        return self.name
-
-
 class Executor:
+    class Pair:
+        def __init__(self, car, cdr):
+            self.car = car
+            self.cdr = cdr
+
+    class Function:
+        def __init__(self, name, parameters, expression):
+            self.name = name
+            self.parameters = parameters
+            self.expression = expression
+
+        def __str__(self):
+            return self.name
+
     def __init__(self):
         self.global_env = {
             '+': self.add,
@@ -145,9 +144,9 @@ class Executor:
         elif type(obj) is Expression:
             operator = self.evaluate(obj.exp[0])
             operands = obj.exp[1:]
-            if type(env.get(operator)) is Function:
+            if type(env.get(operator)) is self.Function:
                 return self.defined_function(env[operator], operands, env)
-            elif type(operator) is Function:  # Lambda
+            elif type(operator) is self.Function:  # Lambda
                 return self.defined_function(operator, operands, env)
             else:
                 operator = self.evaluate(operator, env)
@@ -193,7 +192,7 @@ class Executor:
         if len(operands) != 3: raise SyntaxError(f'\'defun\' : Expected 3 arguments but received {len(operands)}')
         name = self.evaluate(operands[0], env)
         if type(name) is not str: raise SyntaxError(f'\'defun\' : \'{operands[0]}\' is already defined')
-        env[name] = Function(name, operands[1].exp, operands[2])
+        env[name] = self.Function(name, operands[1].exp, operands[2])
         return None
 
     def defvar(self, operands, env):
@@ -251,7 +250,7 @@ class Executor:
 
     def cons(self, operands, env):
         if len(operands) != 2: raise SyntaxError(f'\'cons\' : Expected 2 arguments but received {len(operands)}')
-        return Pair(
+        return self.Pair(
             self.evaluate(operands[0], env),
             self.evaluate(operands[1], env)
         )
@@ -259,21 +258,21 @@ class Executor:
     def car(self, operands, env):
         if len(operands) != 1: raise SyntaxError(f'\'car\' : Expected 1 argument but received {len(operands)}')
         pair = self.evaluate(operands[0], env)
-        if type(pair) is not Pair: raise SyntaxError(f'\'car\' : Expected argument of type \'Pair\''
+        if type(pair) is not self.Pair: raise SyntaxError(f'\'car\' : Expected argument of type \'Pair\''
                                                      f' but was \'{type(pair)}\'')
         return pair.car
 
     def cdr(self, operands, env):
         if len(operands) != 1: raise SyntaxError(f'\'cdr\' : Expected 1 argument but received {len(operands)}')
         pair = self.evaluate(operands[0], env)
-        if type(pair) is not Pair: raise SyntaxError(f'\'cdr\' : Expected argument of type \'Pair\''
+        if type(pair) is not self.Pair: raise SyntaxError(f'\'cdr\' : Expected argument of type \'Pair\''
                                                      f' but was \'{type(pair)}\'')
         return pair.cdr
 
     def lambda_statement(self, operands, env):
         assert self, env
         if len(operands) != 2: raise SyntaxError(f'\'lambda\' : Expected 3 arguments but received {len(operands)}')
-        return Function('lambda', operands[0].exp, operands[1])
+        return self.Function('lambda', operands[0].exp, operands[1])
 
 
 class LispInterpreter:
