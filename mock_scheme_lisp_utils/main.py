@@ -10,20 +10,20 @@ if __name__ == '__main__':
     result = interpreter.run(test_in)
     assert result == [None, 3]
 
-    # test_in = """
-    # (defun fib (n)
-    #     (if (< n 2)
-    #         n
-    #         (+
-    #             (fib (- n 1))
-    #             (fib (- n 2))
-    #         )
-    #     )
-    # )
-    # (fib 5)
-    # """
-    # result = interpreter.run(test_in)
-    # print(result)
+    test_in = """
+    (defun fib (n)
+        (if (< n 2)
+            n
+            (+
+                (fib (- n 1))
+                (fib (- n 2))
+            )
+        )
+    )
+    (fib 6)
+    """
+    result = interpreter.run(test_in)
+    assert result == [None, 8]
 
     test_in = """(+
     1

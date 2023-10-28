@@ -105,9 +105,9 @@ class Executor:
             'let': self.let,
             'defun': self.defun,
 
-            'if': None,
-            '<': None,
-            '>': None,
+            'if': self.if_statement,
+            '<': self.greater_than,
+            '>': self.less_than,
         }
 
     def evaluate(self, obj, env: dict = None):
@@ -162,6 +162,7 @@ class Executor:
         return self.evaluate(operands[1], env)
 
     def defun(self, operands, env):
+        assert self.user_defined_func is not None
         if len(operands) != 3: raise SyntaxError
         name = operands[0].evaluate(env)
         assert type(name) is str
@@ -175,6 +176,22 @@ class Executor:
         for par, val in zip(parameters, operands):
             env[par.name] = self.evaluate(val, env)
         return self.evaluate(expression, env)
+
+    def if_statement(self, operands, env):
+        if len(operands) != 3: raise SyntaxError
+        condition = self.evaluate(operands[0], env)
+        if condition:
+            return self.evaluate(operands[1], env)
+        else:
+            return self.evaluate(operands[2], env)
+
+    def greater_than(self, operands, env):
+        if len(operands) != 2: raise SyntaxError
+        return self.evaluate(operands[0], env) < self.evaluate(operands[1], env)
+
+    def less_than(self, operands, env):
+        if len(operands) != 2: raise SyntaxError
+        return self.evaluate(operands[0], env) > self.evaluate(operands[1], env)
 
 
 class LispInterpreter:
