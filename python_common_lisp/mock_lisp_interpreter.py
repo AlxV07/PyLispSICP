@@ -2,18 +2,6 @@ class Atom:
     def __init__(self, name):
         self.name = name
 
-    def evaluate(self, env: dict):
-        if env.get(self.name, None) is not None:
-            return env[self.name]
-        else:
-            try:
-                return int(self.name)
-            except ValueError:
-                try:
-                    return float(self.name)
-                except ValueError:
-                    return self.name
-
 
 class Lexer:
     def __init__(self):
@@ -108,13 +96,25 @@ class Executor:
             'if': self.if_statement,
             '<': self.greater_than,
             '>': self.less_than,
+            '=': self.equal_to,
         }
 
     def evaluate(self, obj, env: dict = None):
         if env is None:
             env = self.global_env
+
         if type(obj) is Atom:
-            return obj.evaluate(env)
+            if env.get(obj.name, None) is not None:
+                return env[obj.name]
+            else:
+                try:
+                    return int(obj.name)
+                except ValueError:
+                    try:
+                        return float(obj.name)
+                    except ValueError:
+                        return obj.name
+
         elif type(obj) is List:
             operator_atom = obj.exp[0]
             operands = obj.exp[1:]
@@ -125,7 +125,8 @@ class Executor:
                 try:
                     return operator(operands, env)
                 except TypeError:
-                    raise SyntaxError
+                    raise SyntaxError(operator)
+
         else:
             return obj
 
@@ -155,27 +156,26 @@ class Executor:
         if len(operands) != 2: raise SyntaxError
         env = env.copy()
         for l in operands[0].exp:
-            name = l.exp[0].evaluate(env)
-            assert type(name) is str
+            name = self.evaluate(l.exp[0], env)
+            assert type(name) is str  # `name` hasn't been defined in `env` already
             val = self.evaluate(l.exp[1], env)
             env[name] = val
         return self.evaluate(operands[1], env)
 
     def defun(self, operands, env):
-        assert self.user_defined_func is not None
         if len(operands) != 3: raise SyntaxError
-        name = operands[0].evaluate(env)
-        assert type(name) is str
-        env[name] = (operands[1].exp, operands[2])  # parameters: list, List: List
+        name = self.evaluate(operands[0], env)
+        assert type(name) is str  # `name` hasn't been defined in `env` already
+        env[name] = (operands[1].exp, operands[2])  # parameters: list, function: List
         return None
 
     def user_defined_func(self, name: str, operands: list, env: dict):
-        parameters, expression = env[name]
+        parameters, function = env[name]
         assert len(parameters) == len(operands)
         env = env.copy()
-        for par, val in zip(parameters, operands):
-            env[par.name] = self.evaluate(val, env)
-        return self.evaluate(expression, env)
+        for parameter, operand in zip(parameters, operands):
+            env[parameter.name] = self.evaluate(operand, env)
+        return self.evaluate(function, env)
 
     def if_statement(self, operands, env):
         if len(operands) != 3: raise SyntaxError
@@ -192,6 +192,10 @@ class Executor:
     def less_than(self, operands, env):
         if len(operands) != 2: raise SyntaxError
         return self.evaluate(operands[0], env) > self.evaluate(operands[1], env)
+
+    def equal_to(self, operands, env):
+        if len(operands) != 2: raise SyntaxError
+        return self.evaluate(operands[0], env) == self.evaluate(operands[1], env)
 
 
 class LispInterpreter:

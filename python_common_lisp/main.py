@@ -4,6 +4,23 @@ if __name__ == '__main__':
     interpreter = LispInterpreter()
 
     test_in = """
+    (let ((x 1) (y 2) (z 3)) (+ x y z))
+    (defun p (a b) (+ a b))
+    (p 1 2)
+    
+    (let ((x 1))
+        (p (p x x) (p x x) )
+    )
+    
+    (= 1 1)
+    
+    (defun max (x y) (if (> x y) x y))
+    (max 3 10.0)
+    """
+    result = interpreter.run(test_in)
+    print(result)
+
+    test_in = """
     (defun increment (n) (+ n 1)) 
     (increment (increment 1))
     """
