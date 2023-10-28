@@ -21,6 +21,24 @@ if __name__ == '__main__':
     (and true true true)
     (not (or false false false (and false true) (and true true)))
     (or false false false)
+    
+    (let ((x (cons 1 2)))
+        (cdr x)
+    )
+    
+    (defun to () (cons 1 2))
+    (car (to))
+    (cdr (to))
+    
+    (defvar acon (cons (cons 1 2) (cons 3 4)))
+    (car (car acon))
+    (cdr (car acon))
+    (car (cdr acon))
+    (cdr (cdr acon))
+    
+    (defun square (n) (* n n))
+    (defun f (g) (g 2))
+    (f square)
     """
     result = interpreter.run(test_in)
     print(result)

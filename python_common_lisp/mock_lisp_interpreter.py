@@ -31,7 +31,7 @@ class Lexer:
             self.atom = ''
 
 
-class List:
+class Expression:
     def __init__(self):
         self.exp = []
 
@@ -40,7 +40,7 @@ class List:
 
 
 class Parser:
-    class ListQueue:
+    class ExpressionQueue:
         def __init__(self):
             self.q = []
 
@@ -52,7 +52,7 @@ class Parser:
                 self.q[-1].add(atom)
 
         def start_list(self):
-            self.q.append(List())
+            self.q.append(Expression())
 
         def end_list(self):
             exp = self.q.pop()
@@ -62,7 +62,7 @@ class Parser:
                 return exp
 
     def __init__(self):
-        self.exp_queue = self.ListQueue()
+        self.exp_queue = self.ExpressionQueue()
 
     def parse(self, token_list: list):
         self.exp_queue.clear()
@@ -82,6 +82,18 @@ class Parser:
         return result
 
 
+class Pair:
+    def __init__(self, car, cdr):
+        self.car = car
+        self.cdr = cdr
+
+
+class Function:
+    def __init__(self, parameters, expression):
+        self.parameters = parameters
+        self.expression = expression
+
+
 class Executor:
     def __init__(self):
         self.global_env = {
@@ -92,6 +104,7 @@ class Executor:
 
             'let': self.let,
             'defun': self.defun,
+            'defvar': self.defvar,
 
             'if': self.if_statement,
             '<': self.greater_than,
@@ -103,7 +116,9 @@ class Executor:
             'true': True,
             'false': False,
 
-            'list': None,
+            'cons': self.cons,
+            'car': self.car,
+            'cdr': self.cdr,
         }
 
     def evaluate(self, obj, env: dict = None):
@@ -122,70 +137,76 @@ class Executor:
                     except ValueError:
                         return obj.name
 
-        elif type(obj) is List:
+        elif type(obj) is Expression:
             operator_atom = obj.exp[0]
             operands = obj.exp[1:]
-            if type(env.get(operator_atom.name)) is tuple:  # Is a user_defined_func
+            if type(env.get(operator_atom.name)) is Function:
                 return self.user_defined_func(operator_atom.name, operands, env)
             else:
                 operator = self.evaluate(operator_atom, env)
-                try:
-                    return operator(operands, env)
-                except TypeError:
-                    raise SyntaxError(operator)
+                if type(operator) is str: raise SyntaxError(f'Unknown operation: \'{operator}\'')
+                return operator(operands, env)
 
         else:
             return obj
 
     def add(self, operands, env):
-        if len(operands) < 2: raise SyntaxError
+        if len(operands) < 2: raise SyntaxError(f'\'+\' : Expected >=2 arguments but received {len(operands)}')
         return sum(map(lambda o: self.evaluate(o, env), operands))
 
     def minus(self, operands, env):
-        if len(operands) < 2: raise SyntaxError
+        if len(operands) < 2: raise SyntaxError(f'\'-\' : Expected >=2 arguments but received {len(operands)}')
         total = self.evaluate(operands[0], env)
         for op in operands[1:]:
             total -= self.evaluate(op, env)
         return total
 
     def multiply(self, operands, env):
-        if len(operands) < 2: raise SyntaxError
+        if len(operands) < 2: raise SyntaxError(f'\'*\' : Expected >=2 arguments but received {len(operands)}')
         total = self.evaluate(operands[0], env)
         for op in operands[1:]:
             total *= self.evaluate(op, env)
         return total
 
     def divide(self, operands, env):
-        if len(operands) != 2: raise SyntaxError
+        if len(operands) != 2: raise SyntaxError(f'\'/\' : Expected 2 arguments but received {len(operands)}')
         return self.evaluate(operands[0], env) / self.evaluate(operands[1], env)
 
     def let(self, operands, env):
-        if len(operands) != 2: raise SyntaxError
+        if len(operands) != 2: raise SyntaxError(f'\'let\' : Expected 2 arguments but received {len(operands)}')
         env = env.copy()
         for l in operands[0].exp:
             name = self.evaluate(l.exp[0], env)
-            assert type(name) is str  # `name` hasn't been defined in `env` already
+            if type(name) is not str: raise SyntaxError(f'\'let\' : \'{l.exp[0]}\' is already defined')
             val = self.evaluate(l.exp[1], env)
             env[name] = val
         return self.evaluate(operands[1], env)
 
     def defun(self, operands, env):
-        if len(operands) != 3: raise SyntaxError
+        if len(operands) != 3: raise SyntaxError(f'\'defun\' : Expected 3 arguments but received {len(operands)}')
         name = self.evaluate(operands[0], env)
-        assert type(name) is str  # `name` hasn't been defined in `env` already
-        env[name] = (operands[1].exp, operands[2])  # parameters: list, function: List
+        if type(name) is not str: raise SyntaxError(f'\'defun\' : \'{operands[0]}\' is already defined')
+        env[name] = Function(operands[1].exp, operands[2])
+        return None
+
+    def defvar(self, operands, env):
+        if len(operands) != 2: raise SyntaxError(f'\'defvar\' : Expected 2 arguments but received {len(operands)}')
+        name = self.evaluate(operands[0], env)
+        if type(name) is not str: raise SyntaxError(f'\'defvar\' : \'{operands[0]}\' is already defined')
+        env[name] = self.evaluate(operands[1], env)
         return None
 
     def user_defined_func(self, name: str, operands: list, env: dict):
-        parameters, function = env[name]
-        assert len(parameters) == len(operands)
+        parameters, expression = env[name].parameters, env[name].expression
+        if len(parameters) != len(operands):
+            raise SyntaxError(f'\'{name}\' : Expected {len(parameters)} argument{"" if len(parameters) == 1 else "s"} but received {len(operands)}')
         env = env.copy()
         for parameter, operand in zip(parameters, operands):
             env[parameter.name] = self.evaluate(operand, env)
-        return self.evaluate(function, env)
+        return self.evaluate(expression, env)
 
     def if_statement(self, operands, env):
-        if len(operands) != 3: raise SyntaxError
+        if len(operands) != 3: raise SyntaxError(f'\'if\' : Expected 3 arguments but received {len(operands)}')
         condition = self.evaluate(operands[0], env)
         if condition:
             return self.evaluate(operands[1], env)
@@ -193,7 +214,7 @@ class Executor:
             return self.evaluate(operands[2], env)
 
     def not_statement(self, operands, env):
-        if len(operands) != 1: raise SyntaxError
+        if len(operands) != 1: raise SyntaxError(f'\'not\' : Expected 1 argument but received {len(operands)}')
         return not self.evaluate(operands[0], env)
 
     def and_statement(self, operands, env):
@@ -209,16 +230,37 @@ class Executor:
         return False
 
     def greater_than(self, operands, env):
-        if len(operands) != 2: raise SyntaxError
+        if len(operands) != 2: raise SyntaxError(f'\'<\' : Expected 2 arguments but received {len(operands)}')
         return self.evaluate(operands[0], env) < self.evaluate(operands[1], env)
 
     def less_than(self, operands, env):
-        if len(operands) != 2: raise SyntaxError
+        if len(operands) != 2: raise SyntaxError(f'\'>\' : Expected 2 arguments but received {len(operands)}')
         return self.evaluate(operands[0], env) > self.evaluate(operands[1], env)
 
     def equal_to(self, operands, env):
-        if len(operands) != 2: raise SyntaxError
+        if len(operands) != 2: raise SyntaxError(f'\'=\' : Expected 2 arguments but received {len(operands)}')
         return self.evaluate(operands[0], env) == self.evaluate(operands[1], env)
+
+    def cons(self, operands, env):
+        if len(operands) != 2: raise SyntaxError(f'\'cons\' : Expected 2 arguments but received {len(operands)}')
+        return Pair(
+            self.evaluate(operands[0], env),
+            self.evaluate(operands[1], env)
+        )
+
+    def car(self, operands, env):
+        if len(operands) != 1: raise SyntaxError(f'\'car\' : Expected 1 argument but received {len(operands)}')
+        pair = self.evaluate(operands[0], env)
+        if type(pair) is not Pair: raise SyntaxError(f'\'car\' : Expected argument of type \'Pair\''
+                                                     f' but was \'{type(pair)}\'')
+        return pair.car
+
+    def cdr(self, operands, env):
+        if len(operands) != 1: raise SyntaxError(f'\'cdr\' : Expected 1 argument but received {len(operands)}')
+        pair = self.evaluate(operands[0], env)
+        if type(pair) is not Pair: raise SyntaxError(f'\'cdr\' : Expected argument of type \'Pair\''
+                                                     f' but was \'{type(pair)}\'')
+        return pair.cdr
 
 
 class LispInterpreter:
