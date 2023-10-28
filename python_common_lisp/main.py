@@ -1,4 +1,4 @@
-from mock_scheme_lisp_utils.mock_lisp_interpreter import LispInterpreter
+from python_common_lisp.mock_lisp_interpreter import LispInterpreter
 
 if __name__ == '__main__':
     interpreter = LispInterpreter()
