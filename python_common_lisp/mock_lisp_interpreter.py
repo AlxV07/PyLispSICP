@@ -89,9 +89,13 @@ class Pair:
 
 
 class Function:
-    def __init__(self, parameters, expression):
+    def __init__(self, name, parameters, expression):
+        self.name = name
         self.parameters = parameters
         self.expression = expression
+
+    def __str__(self):
+        return self.name
 
 
 class Executor:
@@ -189,7 +193,7 @@ class Executor:
         if len(operands) != 3: raise SyntaxError(f'\'defun\' : Expected 3 arguments but received {len(operands)}')
         name = self.evaluate(operands[0], env)
         if type(name) is not str: raise SyntaxError(f'\'defun\' : \'{operands[0]}\' is already defined')
-        env[name] = Function(operands[1].exp, operands[2])
+        env[name] = Function(name, operands[1].exp, operands[2])
         return None
 
     def defvar(self, operands, env):
@@ -269,7 +273,7 @@ class Executor:
     def lambda_statement(self, operands, env):
         assert self, env
         if len(operands) != 2: raise SyntaxError(f'\'lambda\' : Expected 3 arguments but received {len(operands)}')
-        return Function(operands[0].exp, operands[1])
+        return Function('lambda', operands[0].exp, operands[1])
 
 
 class LispInterpreter:

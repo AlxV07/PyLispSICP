@@ -41,6 +41,10 @@ if __name__ == '__main__':
     (f square)
     (f (lambda (x) (+ x 3)))
     ((lambda (x y z) (+ x y (square z))) 1 2 3)
+    
+    (defun cube (n) (* n n n))
+    (defun bob () (if (> 1 0) square cube))
+    (f (bob))
     """
     result = interpreter.run(test_in)
     print(result)
