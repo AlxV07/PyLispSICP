@@ -1,15 +1,18 @@
 class Atom:
-    def __init__(self, atom):
-        self.atom = atom
+    def __init__(self, name):
+        self.name = name
 
     def evaluate(self, env: dict):
-        if env.get(self.atom, None) is not None:
-            return env[self.atom]
+        if env.get(self.name, None) is not None:
+            return env[self.name]
         else:
             try:
-                return float(self.atom)
+                return int(self.name)
             except ValueError:
-                return self.atom
+                try:
+                    return float(self.name)
+                except ValueError:
+                    return self.name
 
 
 class Lexer:
@@ -75,19 +78,20 @@ class Parser:
 
     def parse(self, token_list: list):
         self.exp_queue.clear()
+        result = []
         i = 0
         while i < len(token_list):
             token = token_list[i]
             if token == '(':
                 self.exp_queue.start_list()
             elif token == ')':
-                result = self.exp_queue.end_list()
-                if result is not None:
-                    return result
+                r = self.exp_queue.end_list()
+                if r is not None:
+                    result.append(r)
             else:
                 self.exp_queue.add(token)
             i += 1
-        raise SyntaxError
+        return result
 
 
 class Executor:
@@ -99,8 +103,11 @@ class Executor:
             '/': self.divide,
 
             'let': self.let,
-            'defun': None,
+            'defun': self.defun,
 
+            'if': None,
+            '<': None,
+            '>': None,
         }
 
     def evaluate(self, obj, env: dict = None):
@@ -109,9 +116,16 @@ class Executor:
         if type(obj) is Atom:
             return obj.evaluate(env)
         elif type(obj) is List:
-            operator = self.evaluate(obj.exp[0], env)
+            operator_atom = obj.exp[0]
             operands = obj.exp[1:]
-            return operator(operands, env)
+            if type(env.get(operator_atom.name)) is tuple:  # Is a user_defined_func
+                return self.user_defined_func(operator_atom.name, operands, env)
+            else:
+                operator = self.evaluate(operator_atom, env)
+                try:
+                    return operator(operands, env)
+                except TypeError:
+                    raise SyntaxError
         else:
             return obj
 
@@ -146,3 +160,33 @@ class Executor:
             val = self.evaluate(l.exp[1], env)
             env[name] = val
         return self.evaluate(operands[1], env)
+
+    def defun(self, operands, env):
+        if len(operands) != 3: raise SyntaxError
+        name = operands[0].evaluate(env)
+        assert type(name) is str
+        env[name] = (operands[1].exp, operands[2])  # parameters: list, List: List
+        return None
+
+    def user_defined_func(self, name: str, operands: list, env: dict):
+        parameters, expression = env[name]
+        assert len(parameters) == len(operands)
+        env = env.copy()
+        for par, val in zip(parameters, operands):
+            env[par.name] = self.evaluate(val, env)
+        return self.evaluate(expression, env)
+
+
+class LispInterpreter:
+    def __init__(self):
+        self.lexer = Lexer()
+        self.parser = Parser()
+        self.executor = Executor()
+
+    def run(self, code: str):
+        token_list = self.lexer.lex(code)
+        expressions = self.parser.parse(token_list)
+        result = []
+        for expression in expressions:
+            result.append(self.executor.evaluate(expression))
+        return result

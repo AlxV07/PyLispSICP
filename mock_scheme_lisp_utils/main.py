@@ -1,9 +1,29 @@
-from mock_scheme_lisp_utils.mock_lisp_interpreter import Lexer, Parser, Executor
+from mock_scheme_lisp_utils.mock_lisp_interpreter import LispInterpreter
 
 if __name__ == '__main__':
-    lexer = Lexer()
-    parser = Parser()
-    executor = Executor()
+    interpreter = LispInterpreter()
+
+    test_in = """
+    (defun increment (n) (+ n 1)) 
+    (increment (increment 1))
+    """
+    result = interpreter.run(test_in)
+    assert result == [None, 3]
+
+    # test_in = """
+    # (defun fib (n)
+    #     (if (< n 2)
+    #         n
+    #         (+
+    #             (fib (- n 1))
+    #             (fib (- n 2))
+    #         )
+    #     )
+    # )
+    # (fib 5)
+    # """
+    # result = interpreter.run(test_in)
+    # print(result)
 
     test_in = """(+
     1
@@ -13,58 +33,28 @@ if __name__ == '__main__':
     (+ 2 (+ 1 3 (+ 1 3)))
     )
     """
-    token_list = lexer.lex(test_in)
-    print(token_list)
-    expression = parser.parse(token_list)
-    print(expression)
-    # result = executor.evaluate(expression)
-    # print(result)
-    # assert result == 40.0
-    print()
+    result = interpreter.run(test_in)[0]
+    assert result == 40.0
 
     test_in = """(+
         10 20 (- 0 5 3 2)
         )
         """
-    token_list = lexer.lex(test_in)
-    print(token_list)
-    expression = parser.parse(token_list)
-    print(expression)
-    # result = executor.evaluate(expression)
-    # print(result)
-    # assert result == 20.0
-    print()
+    result = interpreter.run(test_in)[0]
+    assert result == 20.0
 
     test_in = """(* 12 5 4)
     """
-    token_list = lexer.lex(test_in)
-    print(token_list)
-    expression = parser.parse(token_list)
-    print(expression)
-    # result = executor.evaluate(expression)
-    # print(result)
-    # assert result == 240.0
-    print()
+    result = interpreter.run(test_in)[0]
+    assert result == 240.0
 
     test_in = """(/ 72 3)
         """
-    token_list = lexer.lex(test_in)
-    print(token_list)
-    expression = parser.parse(token_list)
-    print(expression)
-    # result = executor.evaluate(expression)
-    # print(result)
-    # assert result == 24.0
-    print()
+    result = interpreter.run(test_in)[0]
+    assert result == 24.0
 
     test_in = """(let ((x 1) (y 1)) 
                     (+ x y))
             """
-    token_list = lexer.lex(test_in)
-    print(token_list)
-    expression = parser.parse(token_list)
-    print(expression)
-    print(expression.exp)
-    result = executor.evaluate(expression)
-    print(result)
+    result = interpreter.run(test_in)[0]
     assert result == 2.0
