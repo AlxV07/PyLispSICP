@@ -97,6 +97,13 @@ class Executor:
             '<': self.greater_than,
             '>': self.less_than,
             '=': self.equal_to,
+            'not': self.not_statement,
+            'and': self.and_statement,
+            'or': self.or_statement,
+            'true': True,
+            'false': False,
+
+            'list': None,
         }
 
     def evaluate(self, obj, env: dict = None):
@@ -184,6 +191,22 @@ class Executor:
             return self.evaluate(operands[1], env)
         else:
             return self.evaluate(operands[2], env)
+
+    def not_statement(self, operands, env):
+        if len(operands) != 1: raise SyntaxError
+        return not self.evaluate(operands[0], env)
+
+    def and_statement(self, operands, env):
+        for operand in operands:
+            if not self.evaluate(operand, env):
+                return False
+        return True
+
+    def or_statement(self, operands, env):
+        for operand in operands:
+            if self.evaluate(operand, env):
+                return True
+        return False
 
     def greater_than(self, operands, env):
         if len(operands) != 2: raise SyntaxError

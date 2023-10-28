@@ -16,6 +16,11 @@ if __name__ == '__main__':
     
     (defun max (x y) (if (> x y) x y))
     (max 3 10.0)
+    
+    (and true false false)
+    (and true true true)
+    (not (or false false false (and false true) (and true true)))
+    (or false false false)
     """
     result = interpreter.run(test_in)
     print(result)
