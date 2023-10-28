@@ -39,6 +39,8 @@ if __name__ == '__main__':
     (defun square (n) (* n n))
     (defun f (g) (g 2))
     (f square)
+    (f (lambda (x) (+ x 3)))
+    ((lambda (x y z) (+ x y (square z))) 1 2 3)
     """
     result = interpreter.run(test_in)
     print(result)

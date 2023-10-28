@@ -105,6 +105,7 @@ class Executor:
             'let': self.let,
             'defun': self.defun,
             'defvar': self.defvar,
+            'lambda': self.lambda_statement,
 
             'if': self.if_statement,
             '<': self.greater_than,
@@ -138,12 +139,14 @@ class Executor:
                         return obj.name
 
         elif type(obj) is Expression:
-            operator_atom = obj.exp[0]
+            operator = self.evaluate(obj.exp[0])
             operands = obj.exp[1:]
-            if type(env.get(operator_atom.name)) is Function:
-                return self.user_defined_func(operator_atom.name, operands, env)
+            if type(env.get(operator)) is Function:
+                return self.defined_function(env[operator], operands, env)
+            elif type(operator) is Function:  # Lambda
+                return self.defined_function(operator, operands, env)
             else:
-                operator = self.evaluate(operator_atom, env)
+                operator = self.evaluate(operator, env)
                 if type(operator) is str: raise SyntaxError(f'Unknown operation: \'{operator}\'')
                 return operator(operands, env)
 
@@ -196,10 +199,11 @@ class Executor:
         env[name] = self.evaluate(operands[1], env)
         return None
 
-    def user_defined_func(self, name: str, operands: list, env: dict):
-        parameters, expression = env[name].parameters, env[name].expression
+    def defined_function(self, func, operands, env):
+        parameters, expression = func.parameters, func.expression
         if len(parameters) != len(operands):
-            raise SyntaxError(f'\'{name}\' : Expected {len(parameters)} argument{"" if len(parameters) == 1 else "s"} but received {len(operands)}')
+            raise SyntaxError(f'\'{func}\' : Expected {len(parameters)} argument{"" if len(parameters) == 1 else "s"}'
+                              f' but received {len(operands)}')
         env = env.copy()
         for parameter, operand in zip(parameters, operands):
             env[parameter.name] = self.evaluate(operand, env)
@@ -261,6 +265,11 @@ class Executor:
         if type(pair) is not Pair: raise SyntaxError(f'\'cdr\' : Expected argument of type \'Pair\''
                                                      f' but was \'{type(pair)}\'')
         return pair.cdr
+
+    def lambda_statement(self, operands, env):
+        assert self, env
+        if len(operands) != 2: raise SyntaxError(f'\'lambda\' : Expected 3 arguments but received {len(operands)}')
+        return Function(operands[0].exp, operands[1])
 
 
 class LispInterpreter:
