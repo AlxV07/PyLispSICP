@@ -2,6 +2,9 @@ class Atom:
     def __init__(self, name):
         self.name = name
 
+    def __str__(self):
+        return self.name
+
 
 class Lexer:
     def __init__(self):
@@ -82,6 +85,7 @@ class Parser:
                 assert type(token) is Atom
                 if not self.exp_queue.add(token):
                     result.append(token)
+        if len(self.exp_queue.q) > 0: raise SyntaxError('Unclosed expression')
         return result
 
 
@@ -90,6 +94,9 @@ class Executor:
         def __init__(self, car, cdr):
             self.car = car
             self.cdr = cdr
+
+        def __str__(self):
+            return f'Pair: ({self.car} . {self.cdr})'
 
     class Function:
         def __init__(self, name, parameters, expression):
@@ -127,7 +134,7 @@ class Executor:
             'cdr': self.cdr,
         }
 
-    def evaluate(self, obj, env: dict = None):
+    def evaluate(self, obj, env: dict):
         if env is None:
             env = self.global_env
 
@@ -141,22 +148,21 @@ class Executor:
                     try:
                         return float(obj.name)
                     except ValueError:
-                        return obj.name
+                        raise SyntaxError(f'Unknown: \'{obj.name}\'')
 
         elif type(obj) is Expression:
-            operator = self.evaluate(obj.exp[0])
+            operator = self.evaluate(obj.exp[0], env)
             operands = obj.exp[1:]
             if type(env.get(operator)) is self.Function:
                 return self.defined_function(env[operator], operands, env)
             elif type(operator) is self.Function:  # Lambda
                 return self.defined_function(operator, operands, env)
             else:
-                operator = self.evaluate(operator, env)
                 if type(operator) is str: raise SyntaxError(f'Unknown operation: \'{operator}\'')
                 return operator(operands, env)
 
         else:
-            return obj
+            raise Exception(f'Unknown: \'{obj}\'')
 
     def add(self, operands, env):
         if len(operands) < 2: raise SyntaxError(f'\'+\' : Expected >=2 arguments but received {len(operands)}')
@@ -184,24 +190,36 @@ class Executor:
         if len(operands) != 2: raise SyntaxError(f'\'let\' : Expected 2 arguments but received {len(operands)}')
         env = env.copy()
         for l in operands[0].exp:
-            name = self.evaluate(l.exp[0], env)
-            if type(name) is not str: raise SyntaxError(f'\'let\' : \'{l.exp[0]}\' is already defined')
-            val = self.evaluate(l.exp[1], env)
-            env[name] = val
+            op = l.exp[0]
+            try:
+                self.evaluate(op, env)
+                raise NameError(f'\'let\' : \'{op}\' illegal variable name')
+            except SyntaxError:
+                name = op.name
+                val = self.evaluate(l.exp[1], env)
+                env[name] = val
         return self.evaluate(operands[1], env)
 
     def defun(self, operands, env):
         if len(operands) != 3: raise SyntaxError(f'\'defun\' : Expected 3 arguments but received {len(operands)}')
-        name = self.evaluate(operands[0], env)
-        if type(name) is not str: raise SyntaxError(f'\'defun\' : \'{operands[0]}\' is already defined')
-        env[name] = self.Function(name, operands[1].exp, operands[2])
+        op = operands[0]
+        try:
+            self.evaluate(op, env)
+            raise NameError(f'\'defun\' : \'{op}\' illegal function name')
+        except SyntaxError:
+            name = op.name
+            env[name] = self.Function(name, operands[1].exp, operands[2])
         return None
 
     def defvar(self, operands, env):
         if len(operands) != 2: raise SyntaxError(f'\'defvar\' : Expected 2 arguments but received {len(operands)}')
-        name = self.evaluate(operands[0], env)
-        if type(name) is not str: raise SyntaxError(f'\'defvar\' : \'{operands[0]}\' is already defined')
-        env[name] = self.evaluate(operands[1], env)
+        op = operands[0]
+        try:
+            self.evaluate(op, env)
+            raise NameError(f'\'defvar\' : \'{op}\' illegal variable name')
+        except SyntaxError:
+            name = op.name
+            env[name] = self.evaluate(operands[1], env)
         return None
 
     def defined_function(self, func, operands, env):
@@ -261,14 +279,14 @@ class Executor:
         if len(operands) != 1: raise SyntaxError(f'\'car\' : Expected 1 argument but received {len(operands)}')
         pair = self.evaluate(operands[0], env)
         if type(pair) is not self.Pair: raise SyntaxError(f'\'car\' : Expected argument of type \'Pair\''
-                                                     f' but was \'{type(pair)}\'')
+                                                          f' but was \'{type(pair)}\'')
         return pair.car
 
     def cdr(self, operands, env):
         if len(operands) != 1: raise SyntaxError(f'\'cdr\' : Expected 1 argument but received {len(operands)}')
         pair = self.evaluate(operands[0], env)
         if type(pair) is not self.Pair: raise SyntaxError(f'\'cdr\' : Expected argument of type \'Pair\''
-                                                     f' but was \'{type(pair)}\'')
+                                                          f' but was \'{type(pair)}\'')
         return pair.cdr
 
     def lambda_statement(self, operands, env):
@@ -288,7 +306,7 @@ class LispInterpreter:
         expressions = self.parser.parse(token_list)
         result = []
         for expression in expressions:
-            r = self.executor.evaluate(expression)
+            r = self.executor.evaluate(expression, self.executor.global_env)
             if r is not None:
                 result.append(r)
         return result

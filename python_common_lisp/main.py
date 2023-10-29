@@ -4,6 +4,9 @@ if __name__ == '__main__':
     interpreter = LispInterpreter()
 
     test_in = """
+    (defun increment (a) (+ a 1))
+    (increment 3)
+    
     (let ((x 1) (y 2) (z 3)) (+ x y z))
     (defun p (a b) (+ a b))
     (p 1 2)
@@ -13,7 +16,7 @@ if __name__ == '__main__':
     )
     
     (= 1 1)
-    
+        
     (defun max (x y) (if (> x y) x y))
     (max 3 10.0)
     
@@ -39,22 +42,37 @@ if __name__ == '__main__':
     (defun square (n) (* n n))
     (defun f (g) (g 2))
     (f square)
-    (f (lambda (x) (+ x 3))) ;; COMMENT_TEST AWOOGA
+    
     ((lambda (x y z) (+ x y (square z))) 1 2 3)
     
+    (f (lambda (x) (+ x 3))) ;; COMMENT_TEST AWOOGA
+    
     (defun cube (n) (* n n n))
-    (defun bob () (if (> 1 0) square cube))
+    (defun bob () (if (= 1 0) square cube))
     (f (bob))
     f
+    
     (defvar kk 4)
     kk
+    
+    (defun pow (n x)
+        (if (= x 0)
+            1
+            (* n (pow n (- x 1)))
+        )
+    )
+    (pow 3 3)
+    (defvar a123 456)
+    123
+    a123
+    789
     """
     result = interpreter.run(test_in)
     print(result)
 
     test_in = """
-    (defun increment (n) (+ n 1)) 
-    (increment (increment 1))
+    (defun increment1 (n) (+ n 1)) 
+    (increment (increment1 1))
     """
     result = interpreter.run(test_in)
     assert result == [3]
