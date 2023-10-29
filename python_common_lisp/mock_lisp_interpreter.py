@@ -9,8 +9,8 @@ class Lexer:
         self.atom = ''
 
     def lex(self, code: str) -> list:
-        code = code.strip().replace('  ', ' ').split('\n')
-        code = ' '.join(map(lambda line: line if ';;' not in line else line[:line.index(';;')], code))
+        code = ' '.join(map(lambda line: line if ';;' not in line else line[:line.index(';;')],
+                            code.strip().split('\n')))
         self.result.clear()
         for char in code:
             if char == ' ':
@@ -23,6 +23,7 @@ class Lexer:
                 self.result.append(')')
             else:
                 self.atom += char
+        self.exit_atom_build_state()
         return self.result
 
     def exit_atom_build_state(self):
@@ -51,6 +52,8 @@ class Parser:
         def add(self, atom):
             if len(self.q) > 0:
                 self.q[-1].add(atom)
+                return True
+            return False
 
         def start_list(self):
             self.q.append(Expression())
@@ -68,9 +71,7 @@ class Parser:
     def parse(self, token_list: list):
         self.exp_queue.clear()
         result = []
-        i = 0
-        while i < len(token_list):
-            token = token_list[i]
+        for token in token_list:
             if token == '(':
                 self.exp_queue.start_list()
             elif token == ')':
@@ -78,8 +79,9 @@ class Parser:
                 if r is not None:
                     result.append(r)
             else:
-                self.exp_queue.add(token)
-            i += 1
+                assert type(token) is Atom
+                if not self.exp_queue.add(token):
+                    result.append(token)
         return result
 
 
@@ -96,7 +98,7 @@ class Executor:
             self.expression = expression
 
         def __str__(self):
-            return self.name
+            return f'Function: \'{self.name}\''
 
     def __init__(self):
         self.global_env = {
@@ -286,5 +288,7 @@ class LispInterpreter:
         expressions = self.parser.parse(token_list)
         result = []
         for expression in expressions:
-            result.append(self.executor.evaluate(expression))
+            r = self.executor.evaluate(expression)
+            if r is not None:
+                result.append(r)
         return result

@@ -45,6 +45,9 @@ if __name__ == '__main__':
     (defun cube (n) (* n n n))
     (defun bob () (if (> 1 0) square cube))
     (f (bob))
+    f
+    (defvar kk 4)
+    kk
     """
     result = interpreter.run(test_in)
     print(result)
@@ -54,7 +57,7 @@ if __name__ == '__main__':
     (increment (increment 1))
     """
     result = interpreter.run(test_in)
-    assert result == [None, 3]
+    assert result == [3]
 
     test_in = """
     (defun fib (n)
@@ -69,7 +72,7 @@ if __name__ == '__main__':
     (fib 6)
     """
     result = interpreter.run(test_in)
-    assert result == [None, 8]
+    assert result == [8]
 
     test_in = """(+
     1
@@ -101,6 +104,7 @@ if __name__ == '__main__':
 
     test_in = """(let ((x 1) (y 1)) 
                     (+ x y))
+                 fib
             """
-    result = interpreter.run(test_in)[0]
-    assert result == 2.0
+    result = interpreter.run(test_in)
+    assert result[0] == 2.0
