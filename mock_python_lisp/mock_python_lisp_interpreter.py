@@ -12,7 +12,7 @@ class Lexer:
         self.atom = ''
 
     def lex(self, code: str) -> list:
-        code = ' '.join(map(lambda line: line if ';;' not in line else line[:line.index(';;')],
+        code = ' '.join(map(lambda line: line if ';' not in line else line[:line.index(';')],
                             code.strip().split('\n')))
         self.result.clear()
         for char in code:
@@ -99,16 +99,16 @@ class Executor:
             return f'Pair: ({self.car} . {self.cdr})'
 
     class Function:
-        def __init__(self, name, parameters, expression):
+        def __init__(self, name, expressions, parameters):
             self.name = name
+            self.expressions = expressions
             self.parameters = parameters
-            self.expression = expression
 
         def __str__(self):
             return f'Function: \'{self.name}\''
 
     def __init__(self):
-        self.global_env = {
+        self.built_ins = {
             '+': self.add,
             '-': self.minus,
             '*': self.multiply,
@@ -126,18 +126,16 @@ class Executor:
             'not': self.not_statement,
             'and': self.and_statement,
             'or': self.or_statement,
-            'true': True,
-            'false': False,
+            't': True,
+            'nil': False,
 
             'cons': self.cons,
             'car': self.car,
             'cdr': self.cdr,
         }
+        self.global_env = self.built_ins.copy()
 
     def evaluate(self, obj, env: dict):
-        if env is None:
-            env = self.global_env
-
         if type(obj) is Atom:
             if env.get(obj.name, None) is not None:
                 return env[obj.name]
@@ -148,7 +146,7 @@ class Executor:
                     try:
                         return float(obj.name)
                     except ValueError:
-                        raise SyntaxError(f'Unknown: \'{obj.name}\'')
+                        raise NameError(f'Unknown: \'{obj.name}\'')
 
         elif type(obj) is Expression:
             operator = self.evaluate(obj.exp[0], env)
@@ -162,7 +160,7 @@ class Executor:
                 return operator(operands, env)
 
         else:
-            raise Exception(f'Unknown: \'{obj}\'')
+            raise NameError(f'Unknown: \'{obj}\'')
 
     def add(self, operands, env):
         if len(operands) < 2: raise SyntaxError(f'\'+\' : Expected >=2 arguments but received {len(operands)}')
@@ -190,47 +188,39 @@ class Executor:
         if len(operands) != 2: raise SyntaxError(f'\'let\' : Expected 2 arguments but received {len(operands)}')
         env = env.copy()
         for l in operands[0].exp:
-            op = l.exp[0]
-            try:
-                self.evaluate(op, env)
-                raise NameError(f'\'let\' : \'{op}\' illegal variable name')
-            except SyntaxError:
-                name = op.name
-                val = self.evaluate(l.exp[1], env)
-                env[name] = val
+            name = l.exp[0].name
+            if name in self.built_ins: raise NameError(f'\'let\' {name} : illegal variable name')
+            val = self.evaluate(l.exp[1], env)
+            env[name] = val
         return self.evaluate(operands[1], env)
-
-    def defun(self, operands, env):
-        if len(operands) != 3: raise SyntaxError(f'\'defun\' : Expected 3 arguments but received {len(operands)}')
-        op = operands[0]
-        try:
-            self.evaluate(op, env)
-            raise NameError(f'\'defun\' : \'{op}\' illegal function name')
-        except SyntaxError:
-            name = op.name
-            env[name] = self.Function(name, operands[1].exp, operands[2])
-        return None
 
     def defvar(self, operands, env):
         if len(operands) != 2: raise SyntaxError(f'\'defvar\' : Expected 2 arguments but received {len(operands)}')
-        op = operands[0]
-        try:
-            self.evaluate(op, env)
-            raise NameError(f'\'defvar\' : \'{op}\' illegal variable name')
-        except SyntaxError:
-            name = op.name
-            env[name] = self.evaluate(operands[1], env)
+        name = operands[0].name
+        if name in self.built_ins: raise NameError(f'\'defvar\' {name} : illegal variable name')
+        env[name] = self.evaluate(operands[1], env)
+        return None
+
+    def defun(self, operands, env):
+        if len(operands) < 3: raise SyntaxError(f'\'defun\' : Expected >=3 arguments but received {len(operands)}')
+        name = operands[0].name
+        if name in self.built_ins: raise NameError(f'\'defun\' {name} : illegal function name')
+        env[name] = self.Function(name, expressions=operands[2:], parameters=operands[1].exp)
         return None
 
     def defined_function(self, func, operands, env):
-        parameters, expression = func.parameters, func.expression
+        expressions, parameters = func.expressions, func.parameters
         if len(parameters) != len(operands):
             raise SyntaxError(f'\'{func}\' : Expected {len(parameters)} argument{"" if len(parameters) == 1 else "s"}'
                               f' but received {len(operands)}')
         env = env.copy()
         for parameter, operand in zip(parameters, operands):
-            env[parameter.name] = self.evaluate(operand, env)
-        return self.evaluate(expression, env)
+            name = parameter.name
+            if name in self.built_ins: raise NameError(f'{func} {name} : illegal parameter name')
+            env[name] = self.evaluate(operand, env)
+        for expression in expressions[:-1]:
+            self.evaluate(expression, env)
+        return self.evaluate(expressions[-1], env)
 
     def if_statement(self, operands, env):
         if len(operands) != 3: raise SyntaxError(f'\'if\' : Expected 3 arguments but received {len(operands)}')
@@ -292,7 +282,7 @@ class Executor:
     def lambda_statement(self, operands, env):
         assert self, env
         if len(operands) != 2: raise SyntaxError(f'\'lambda\' : Expected 3 arguments but received {len(operands)}')
-        return self.Function('lambda', operands[0].exp, operands[1])
+        return self.Function('lambda', expressions=[operands[1]], parameters=operands[0].exp)
 
 
 class LispInterpreter:
