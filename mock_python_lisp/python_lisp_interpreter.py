@@ -20,15 +20,14 @@ class Value(Atom):
 
 
 class Symbol(Atom):
-    # Represents the name of a binding in the env
+    # Represents name of a binding in the environment
     pass
 
 
 class Cons:
-    def __init__(self, car, cdr, preserved=False):
+    def __init__(self, car, cdr):
         self.car = car
         self.cdr = cdr
-        self.preserved = preserved  # Structure should not be changed (see Lexer.ListBuilder.add)
 
 
 class Environment:
@@ -52,6 +51,22 @@ class BuiltIns:
 class Lexer:
     class ConsBuilder:
         def __init__(self):
+            """
+            root & tar cons for easy bookkeeping: what to return and what to add to, respectively
+
+            ToBeConsed: (1 2 3 4)
+            Root          | Target
+            (1 2)            (1 2)
+            (1 (2 3))        (2 3)
+            (1 (2 (3 4)))    (3 4)
+
+            ToBeConsed: (1 (2 3) 4)
+            Root           | Target
+            (1 None)       (1 None)
+            (2 3)             (2 3)
+            (1 (2 3))     (1 (2 3))
+            (1 ((2 3) 4)  ((2 3) 4)
+            """
             self.q = []
 
         def empty(self):
@@ -60,37 +75,26 @@ class Lexer:
         def add(self, leaf):
             if len(self.q) == 0:  # Not in any list
                 return False
-            cons = self.q[-1]
-            while True:
-                if cons.car is None:  # (NIL . NIL)
-                    # Should only be reached on 1st call immediately after `start_list`
-                    cons.car = leaf
-                    break
-                elif cons.cdr is None:  # (x . NIL)
-                    # Should only be reached on 2nd call immediately after `start_list`
-                    cons.cdr = leaf
-                    break
-                else:  # (x . y)
-                    #  The purpose of `Cons.__preserved`
-                    #  (1 2 3 4)       vs.      (1 (2 3) 4)
-                    #  (1 (2 (3 . 4)))      (1 ((2 . 3) 4))
-                    #  Here, Cons(2 . 3).preserved is marked True in `close_list`
-                    #  This preserves ((2 . 3) 4) instead of (2 (3 . 4))
-                    if type(cons.cdr) is Cons and not cons.cdr.preserved:
-                        cons = cons.cdr
-                    else:
-                        cons.cdr = Cons(car=cons.cdr, cdr=leaf)  # (x . (y . leaf))
-                        break
+            root_cons, tar_cons = self.q[-1]
+            if tar_cons.car is None:  # (NIL . NIL)
+                # Should only be reached on 1st call immediately after `start_list`
+                tar_cons.car = leaf
+            elif tar_cons.cdr is None:  # (x . NIL)
+                # Should only be reached on 2nd call immediately after `start_list`
+                tar_cons.cdr = leaf
+            else:  # (x . y)
+                tar_cons.cdr = Cons(car=tar_cons.cdr, cdr=leaf)  # (x . (y . leaf))
+                self.q[-1] = root_cons, tar_cons.cdr
             return True
 
         def start_list(self):
-            self.q.append(Cons(car=None, cdr=None))
+            cons = Cons(car=None, cdr=None)
+            self.q.append((cons, cons))
 
         def close_list(self):
-            cons = self.q.pop()
+            cons, _ = self.q.pop()
             if len(self.q) == 0:
                 return cons
-            cons.preserved = True
             self.add(cons)
 
         def clear(self):
