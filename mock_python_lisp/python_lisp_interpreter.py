@@ -28,7 +28,7 @@ class Cons:
     def __init__(self, car, cdr, preserved=False):
         self.car = car
         self.cdr = cdr
-        self.__preserved = preserved  # Structure should not be changed (see Lexer.ListBuilder.add)
+        self.preserved = preserved  # Structure should not be changed (see Lexer.ListBuilder.add)
 
 
 class Environment:
@@ -50,7 +50,7 @@ class BuiltIns:
 
 
 class Lexer:
-    class ListBuilder:
+    class ConsBuilder:
         def __init__(self):
             self.q = []
 
@@ -74,38 +74,36 @@ class Lexer:
                     #  The purpose of `Cons.__preserved`
                     #  (1 2 3 4)       vs.      (1 (2 3) 4)
                     #  (1 (2 (3 . 4)))      (1 ((2 . 3) 4))
-                    #  Here, Cons(2 . 3).__preserved is marked True in `close_list`
+                    #  Here, Cons(2 . 3).preserved is marked True in `close_list`
                     #  This preserves ((2 . 3) 4) instead of (2 (3 . 4))
-                    if type(cons.cdr) is Cons and not cons.cdr.__preserved:
+                    if type(cons.cdr) is Cons and not cons.cdr.preserved:
                         cons = cons.cdr
                     else:
                         cons.cdr = Cons(car=cons.cdr, cdr=leaf)  # (x . (y . leaf))
                         break
+            return True
 
         def start_list(self):
-            if len(self.q) == 0:
-                self.q.append(Cons(car=None, cdr=None))
-            else:
-                self.add(Cons(car=None, cdr=None))
+            self.q.append(Cons(car=None, cdr=None))
 
         def close_list(self):
             cons = self.q.pop()
             if len(self.q) == 0:
                 return cons
-            cons.__preserved = True
+            cons.preserved = True
             self.add(cons)
 
         def clear(self):
             self.q.clear()
 
     def __init__(self):
-        self.list_builder = self.ListBuilder()
+        self.cons_builder = self.ConsBuilder()
         self.result = []
         self.symbol_build = ''
 
     def lex(self, code: str) -> list:
         #  Returns list of Atoms/Cons to be evaluated
-        self.list_builder.clear()
+        self.cons_builder.clear()
         self.result.clear()
         lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().split('\n')))
         for line_num, line in enumerate(lines):
@@ -114,18 +112,18 @@ class Lexer:
                     self.exit_atom_build(line_num)
                 elif char == '(':
                     self.exit_atom_build(line_num)
-                    self.list_builder.start_list()
+                    self.cons_builder.start_list()
                 elif char == ')':
                     self.exit_atom_build(line_num)
                     try:
-                        returned_list = self.list_builder.close_list()
+                        returned_list = self.cons_builder.close_list()
                     except IndexError:
                         raise Error.UnmatchedParenthesesException(line_num)
                     if returned_list is not None:
                         self.result.append(returned_list)
                 else:
                     self.enter_atom_build(char)
-        if not self.list_builder.empty():
+        if not self.cons_builder.empty():
             raise Error.UnmatchedParenthesesException(len(lines) - 1)
         return self.result
 
@@ -142,7 +140,7 @@ class Lexer:
                 except ValueError:
                     atom = Symbol(self.symbol_build, line_num)
 
-            if not self.list_builder.add(atom):
+            if not self.cons_builder.add(atom):
                 self.result.append(atom)
             self.symbol_build = ''
 
@@ -159,3 +157,7 @@ class Evaluator:
 
     def call_function(self, function, arguments, env):
         pass
+
+
+x = Lexer().lex('(1 (2 3 4) 5)')
+pass
