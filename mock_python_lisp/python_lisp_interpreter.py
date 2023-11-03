@@ -1,4 +1,14 @@
-# Everything is either an Atom or a Cons
+# http://www.lispworks.com/documentation/lw50/CLHS/Body/03_aba.htm
+# 3.1.2.1 Form Evaluation
+# Forms fall into three categories: symbols, conses, and self-evaluating objects.
+
+# Symbol & self-evaluating object forms are non-cons objects, or atoms.
+# Self-evaluating objects are set values such as numbers and strings.
+# Symbols are either variables or symbol macros (expands to function).
+
+# A cons used as a form is called a compound form.
+# If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
+# Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
 
 class Error:
     # Lisp errors
@@ -11,7 +21,7 @@ class Atom:
     # Non-cons object
     def __init__(self, val, line_num):
         self.val = val
-        self._line_num = line_num  # For debugging
+        self._line_num = line_num  # For error printing
 
 
 class Value(Atom):
@@ -19,9 +29,18 @@ class Value(Atom):
     pass
 
 
+class Number: pass
+
+
+class String: pass
+
+
 class Symbol(Atom):
     # Represents name of a binding in the environment
     pass
+
+
+class Function: pass
 
 
 class Cons:
@@ -31,21 +50,57 @@ class Cons:
 
 
 class Environment:
-    def __init__(self):
-        self.bindings = {}
+    def __init__(self, var_bindings=None, func_bindings=None):
+        if var_bindings is None:
+            var_bindings = dict()
+        if func_bindings is None:
+            func_bindings = dict()
+        self.var_bindings = var_bindings
+        self.func_bindings = func_bindings
 
-    def bind(self, symbol: Symbol, item):
-        self.bindings[symbol.val] = item
+    def bind_var(self, symbol: Symbol, item):
+        self.var_bindings[symbol.val] = item
+
+    def bind_func(self, symbol: Symbol, item):
+        self.func_bindings[symbol.val] = item
+
+    def get_var(self, symbol: Symbol):
+        return self.var_bindings[symbol.val]
+
+    def get_func(self, symbol: Symbol):
+        return self.func_bindings[symbol.val]
 
     def copy(self):
-        return self.bindings.copy()
-
-    def __getitem__(self, item):
-        return self.bindings[item]
+        return self.var_bindings.copy(), self.func_bindings.copy()
 
 
 class BuiltIns:
-    pass
+    global_vars = {
+        "#'+": None,
+        "#'-": None,
+        "#'*": None,
+        "#'/": None,
+
+        "nil": None,
+        "t": None,
+    }
+
+    global_funcs = {
+        "cons": None,
+        "car": None,
+        "cdr": None,
+        "list": None,
+
+        "lambda": None,
+        "defvar": None,
+        "defun": None,
+        "funcall": None,
+
+        "if": None,
+        "cond": None,
+
+        "print": None,
+    }
 
 
 class Lexer:
@@ -79,11 +134,9 @@ class Lexer:
             if tar_cons.car is None:  # (NIL . NIL)
                 # Should only be reached on 1st call immediately after `start_list`
                 tar_cons.car = leaf
-            elif tar_cons.cdr is None:  # (x . NIL)
-                # Should only be reached on 2nd call immediately after `start_list`
-                tar_cons.cdr = leaf
-            else:  # (x . y)
-                tar_cons.cdr = Cons(car=tar_cons.cdr, cdr=leaf)  # (x . (y . leaf))
+            else:  # (x . NIL)
+                assert tar_cons.cdr is None
+                tar_cons.cdr = Cons(car=leaf, cdr=None)  # (x . (leaf . None))
                 self.q[-1] = root_cons, tar_cons.cdr
             return True
 
@@ -104,15 +157,22 @@ class Lexer:
         self.cons_builder = self.ConsBuilder()
         self.result = []
         self.symbol_build = ''
+        self.prev_symbol = ''
 
     def lex(self, code: str) -> list:
         #  Returns list of Atoms/Cons to be evaluated
         self.cons_builder.clear()
         self.result.clear()
-        lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().split('\n')))
+        self.symbol_build = ''
+        self.prev_symbol = ''
+
+        # Case-insensitive names, comments begin w/ `;`
+        lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().upper().split('\n')))
         for line_num, line in enumerate(lines):
             for char in line:
-                if char == ' ':
+                if char == '"':
+                    pass
+                elif char == ' ':
                     self.exit_atom_build(line_num)
                 elif char == '(':
                     self.exit_atom_build(line_num)
@@ -144,20 +204,32 @@ class Lexer:
                 except ValueError:
                     atom = Symbol(self.symbol_build, line_num)
 
+            # Add `if val.startswith("#")...
+
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
+            self.prev_symbol = self.symbol_build
             self.symbol_build = ''
 
 
 class Evaluator:
     def evaluate(self, obj, env: Environment):
-        if type(obj) is Atom:
+        if type(obj) is Value:
             pass
+        elif type(obj) is Symbol:
+            # Should only be a Symbol holding a variable name;
+            # Function names should be (function x) in a list, not evaluated as a Symbol
+            try:
+                return env.get_var(obj)
+            except KeyError:
+                raise Error.UndefinedVariableException
         elif type(obj) is Cons:
             # (func . args)
-            function = env[obj.car]
+            function = obj.car
             arguments = obj.cdr
             self.call_function(function, arguments, env)
+        else:
+            raise Exception(obj)
 
     def call_function(self, function, arguments, env):
         pass
