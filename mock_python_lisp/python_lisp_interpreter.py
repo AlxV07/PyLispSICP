@@ -15,24 +15,23 @@ class Error:
     class UnmatchedParenthesesException(Exception): pass
     class UndefinedFunctionException(Exception): pass
     class UndefinedVariableException(Exception): pass
+    class UnmatchedQuotation(Exception): pass
 
 
 class Atom:
     # Non-cons object
     def __init__(self, val, line_num):
         self.val = val
-        self._line_num = line_num  # For error printing
+        self.line_num = line_num  # For error printing
 
 
-class Value(Atom):
-    # Self-evaluating object e.x. int, float, str
-    pass
+class Number(Atom, float):
+    def __init__(self, val):
+        super().__init__(val)
+        del self.val  # Use `float` val instead of `Atom` val
 
 
-class Number: pass
-
-
-class String: pass
+class String(Atom): pass
 
 
 class Symbol(Atom):
@@ -158,6 +157,7 @@ class Lexer:
         self.result = []
         self.symbol_build = ''
         self.prev_symbol = ''
+        self.string_building = False
 
     def lex(self, code: str) -> list:
         #  Returns list of Atoms/Cons to be evaluated
@@ -165,13 +165,17 @@ class Lexer:
         self.result.clear()
         self.symbol_build = ''
         self.prev_symbol = ''
+        self.string_building = False
 
         # Case-insensitive names, comments begin w/ `;`
         lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().upper().split('\n')))
         for line_num, line in enumerate(lines):
             for char in line:
                 if char == '"':
-                    pass
+                    if not self.string_building:
+                        self.string_building = True
+                    else:
+                        self.exit_atom_build(line_num)
                 elif char == ' ':
                     self.exit_atom_build(line_num)
                 elif char == '(':
@@ -187,6 +191,8 @@ class Lexer:
                         self.result.append(returned_list)
                 else:
                     self.enter_atom_build(char)
+        if self.string_building:
+            raise Error.UnmatchedQuotation(len(lines) - 1)
         if not self.cons_builder.empty():
             raise Error.UnmatchedParenthesesException(len(lines) - 1)
         return self.result
@@ -196,16 +202,21 @@ class Lexer:
 
     def exit_atom_build(self, line_num):
         if len(self.symbol_build) > 0:
-            try:
-                atom = Value(float(self.symbol_build), line_num)
-            except ValueError:
+            # `if val.startswith("#")...
+
+            # `if val.startswith("'")...
+
+            if self.string_building:
+                atom = String(str(self.symbol_build), line_num)
+            else:
                 try:
-                    atom = Value(int(self.symbol_build), line_num)
+                    atom = Number(float(self.symbol_build), line_num)
                 except ValueError:
-                    atom = Symbol(self.symbol_build, line_num)
-
-            # Add `if val.startswith("#")...
-
+                    try:
+                        atom = Number(int(self.symbol_build), line_num)
+                    except ValueError:
+                        atom = Symbol(self.symbol_build, line_num)
+            # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
             self.prev_symbol = self.symbol_build
@@ -214,15 +225,15 @@ class Lexer:
 
 class Evaluator:
     def evaluate(self, obj, env: Environment):
-        if type(obj) is Value:
-            pass
+        if type(obj) is Number or type(obj) is String:
+            return obj
         elif type(obj) is Symbol:
             # Should only be a Symbol holding a variable name;
             # Function names should be (function x) in a list, not evaluated as a Symbol
             try:
                 return env.get_var(obj)
             except KeyError:
-                raise Error.UndefinedVariableException
+                raise Error.UndefinedVariableException(obj.line_num)
         elif type(obj) is Cons:
             # (func . args)
             function = obj.car
