@@ -15,23 +15,27 @@ class Error:
     class UnmatchedParenthesesException(Exception): pass
     class UndefinedFunctionException(Exception): pass
     class UndefinedVariableException(Exception): pass
-    class UnmatchedQuotation(Exception): pass
+    class UnmatchedQuotationException(Exception): pass
+    class InvalidNOFArgumentsException(Exception): pass
+    class IllegalFunctionIdentifierException(Exception): pass
 
 
 class Atom:
     # Non-cons object
-    def __init__(self, val, line_num):
-        self.val = val
-        self.line_num = line_num  # For error printing
-
-
-class Number(Atom, float):
     def __init__(self, val):
-        super().__init__(val)
-        del self.val  # Use `float` val instead of `Atom` val
+        self.val = val
 
 
-class String(Atom): pass
+class SelfEvaluatingObject(Atom):
+    pass
+
+
+class Number(SelfEvaluatingObject):
+    pass
+
+
+class String(SelfEvaluatingObject):
+    pass
 
 
 class Symbol(Atom):
@@ -39,7 +43,10 @@ class Symbol(Atom):
     pass
 
 
-class Function: pass
+class Function:
+    def __init__(self, parameters, form):
+        self.parameters = parameters
+        self.form = form
 
 
 class Cons:
@@ -73,41 +80,13 @@ class Environment:
         return self.var_bindings.copy(), self.func_bindings.copy()
 
 
-class BuiltIns:
-    global_vars = {
-        "#'+": None,
-        "#'-": None,
-        "#'*": None,
-        "#'/": None,
-
-        "nil": None,
-        "t": None,
-    }
-
-    global_funcs = {
-        "cons": None,
-        "car": None,
-        "cdr": None,
-        "list": None,
-
-        "lambda": None,
-        "defvar": None,
-        "defun": None,
-        "funcall": None,
-
-        "if": None,
-        "cond": None,
-
-        "print": None,
-    }
-
-
 class Lexer:
     class ConsBuilder:
         def __init__(self):
             """
             root & tar cons for easy bookkeeping: what to return and what to add to, respectively
 
+            Note: trailing `None` is redacted from following examples:
             ToBeConsed: (1 2 3 4)
             Root          | Target
             (1 2)            (1 2)
@@ -169,53 +148,54 @@ class Lexer:
 
         # Case-insensitive names, comments begin w/ `;`
         lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().upper().split('\n')))
-        for line_num, line in enumerate(lines):
+        for line in lines:
             for char in line:
                 if char == '"':
                     if not self.string_building:
                         self.string_building = True
                     else:
-                        self.exit_atom_build(line_num)
+                        self.exit_atom_build()
+                elif self.string_building:
+                    self.enter_atom_build(char)
+                    continue
                 elif char == ' ':
-                    self.exit_atom_build(line_num)
+                    self.exit_atom_build()
                 elif char == '(':
-                    self.exit_atom_build(line_num)
+                    self.exit_atom_build()
                     self.cons_builder.start_list()
                 elif char == ')':
-                    self.exit_atom_build(line_num)
+                    self.exit_atom_build()
                     try:
                         returned_list = self.cons_builder.close_list()
                     except IndexError:
-                        raise Error.UnmatchedParenthesesException(line_num)
+                        raise Error.UnmatchedParenthesesException()
                     if returned_list is not None:
                         self.result.append(returned_list)
                 else:
                     self.enter_atom_build(char)
         if self.string_building:
-            raise Error.UnmatchedQuotation(len(lines) - 1)
+            raise Error.UnmatchedQuotationException()
         if not self.cons_builder.empty():
-            raise Error.UnmatchedParenthesesException(len(lines) - 1)
+            raise Error.UnmatchedParenthesesException()
         return self.result
 
     def enter_atom_build(self, char):
         self.symbol_build += char
 
-    def exit_atom_build(self, line_num):
+    def exit_atom_build(self):
         if len(self.symbol_build) > 0:
             # `if val.startswith("#")...
 
             # `if val.startswith("'")...
 
             if self.string_building:
-                atom = String(str(self.symbol_build), line_num)
+                atom = String(str(self.symbol_build))
+                self.string_building = False
             else:
                 try:
-                    atom = Number(float(self.symbol_build), line_num)
+                    atom = Number(float(self.symbol_build))
                 except ValueError:
-                    try:
-                        atom = Number(int(self.symbol_build), line_num)
-                    except ValueError:
-                        atom = Symbol(self.symbol_build, line_num)
+                    atom = Symbol(self.symbol_build)
             # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
@@ -223,7 +203,111 @@ class Lexer:
             self.symbol_build = ''
 
 
+class BuiltIns:
+    class BuiltInFunction:
+        def __init__(self, eval_method):
+            self.eval_method = eval_method
+
+        def call(self, arguments: Cons, env: Environment):
+            pass
+
+        @staticmethod
+        def arg_count_check(expected: int, actual: int, exact: bool):
+            if exact:
+                if actual != expected:
+                    raise Error.InvalidNOFArgumentsException
+            else:
+                if actual < expected:
+                    raise Error.InvalidNOFArgumentsException
+
+    class Add(BuiltInFunction):
+        def call(self, arguments, env):
+            total = 0
+            arg_count = 0
+            argument = arguments
+            while argument is not None:
+                val = self.eval_method(argument.car, env).val
+                total += val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return Number(total)
+
+    class Diff(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 0
+            argument = arguments
+            while argument is not None:
+                val = self.eval_method(argument.car, env).val
+                if arg_count == 0:
+                    total = val
+                else:
+                    total -= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return Number(total)
+
+    class Prod(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 1
+            argument = arguments
+            while argument is not None:
+                val = self.eval_method(argument.car, env).val
+                total *= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return Number(total)
+
+    class Quot(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 0
+            argument = arguments
+            while argument is not None:
+                val = self.eval_method(argument.car, env).val
+                if arg_count == 0:
+                    total = val
+                else:
+                    total /= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, True)
+            return Number(total)
+
+    class Cons(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            return arguments
+
+
 class Evaluator:
+    def __init__(self):
+        global_vars = {
+            "NIL": None,
+            "T": None,
+        }
+        global_funcs = {
+            "+": BuiltIns.Add(self.evaluate),
+            "-": BuiltIns.Diff(self.evaluate),
+            "*": BuiltIns.Prod(self.evaluate),
+            "/": BuiltIns.Quot(self.evaluate),
+            "CONS": BuiltIns.Cons(self.evaluate),
+            "CAR": None,
+            "CDR": None,
+            "LIST": None,
+            "LAMBDA": None,
+            "DEFVAR": None,
+            "DEFUN": None,
+            "FUNCALL": None,
+            "IF": None,
+            "COND": None,
+            "PRINT": None,
+        }
+        self.global_env = Environment(global_vars, global_funcs)
+
     def evaluate(self, obj, env: Environment):
         if type(obj) is Number or type(obj) is String:
             return obj
@@ -233,18 +317,45 @@ class Evaluator:
             try:
                 return env.get_var(obj)
             except KeyError:
-                raise Error.UndefinedVariableException(obj.line_num)
+                raise Error.UndefinedVariableException(obj)
         elif type(obj) is Cons:
             # (func . args)
-            function = obj.car
+            try:
+                if type(obj.car) is not Symbol:
+                    raise Error.IllegalFunctionIdentifierException(obj)
+                function = env.get_func(obj.car)
+            except KeyError:
+                raise Error.UndefinedFunctionException(obj)
             arguments = obj.cdr
-            self.call_function(function, arguments, env)
+            if issubclass(type(function), BuiltIns.BuiltInFunction):
+                return function.call(arguments, env)
+            else:
+                return self.call_function(function, arguments, env)
         else:
             raise Exception(obj)
 
-    def call_function(self, function, arguments, env):
-        pass
+    def call_function(self, function: Function, arguments: Cons, env: Environment):
+        lexical_env = Environment(*env.copy())  # Env to run function inside
+        parameter = function.parameters
+        argument = arguments
+        while parameter is not None:  # Binding values to parameters in env
+            lexical_env.bind_var(parameter.car, self.evaluate(argument.car, lexical_env))
+            parameter = parameter.cdr
+            argument = arguments.cdr
+        return self.evaluate(function.form, lexical_env)
 
 
-x = Lexer().lex('(1 (2 3 4) 5)')
+lexer = Lexer()
+evaluator = Evaluator()
+lexed = lexer.lex("""
+(* (/ (+ 1 (+ 2 3)) 2) 3 3)
+(cons 1 2)
+""")
+result = evaluator.evaluate(lexed[0], evaluator.global_env)
+print(result)
+print(result.val)
+result = evaluator.evaluate(lexed[1], evaluator.global_env)
+print(result)
+print(result.car.val)
+print(result.cdr.car.val)
 pass
