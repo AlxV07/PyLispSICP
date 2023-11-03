@@ -13,17 +13,33 @@
 class Error:
     # Lisp errors
     class UnmatchedParenthesesException(Exception): pass
+
     class UndefinedFunctionException(Exception): pass
+
     class UndefinedVariableException(Exception): pass
+
     class UnmatchedQuotationException(Exception): pass
+
     class InvalidNOFArgumentsException(Exception): pass
-    class IllegalFunctionIdentifierException(Exception): pass
+
+    class IllegalFunctionCallException(Exception): pass
+
+
+class NIL:
+    def __str__(self):
+        return "NIL"
+
+
+NIL = NIL()
 
 
 class Atom:
     # Non-cons object
     def __init__(self, val):
         self.val = val
+
+    def __str__(self):
+        return str(self.val)
 
 
 class SelfEvaluatingObject(Atom):
@@ -35,7 +51,8 @@ class Number(SelfEvaluatingObject):
 
 
 class String(SelfEvaluatingObject):
-    pass
+    def __str__(self):
+        return f"'{self.val}'"
 
 
 class Symbol(Atom):
@@ -53,6 +70,9 @@ class Cons:
     def __init__(self, car, cdr):
         self.car = car
         self.cdr = cdr
+
+    def __str__(self):
+        return f'({str(self.car)} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{str(self.cdr)})'
 
 
 class Environment:
@@ -109,17 +129,17 @@ class Lexer:
             if len(self.q) == 0:  # Not in any list
                 return False
             root_cons, tar_cons = self.q[-1]
-            if tar_cons.car is None:  # (NIL . NIL)
+            if tar_cons.car is NIL:  # (NIL . NIL)
                 # Should only be reached on 1st call immediately after `start_list`
                 tar_cons.car = leaf
             else:  # (x . NIL)
-                assert tar_cons.cdr is None
-                tar_cons.cdr = Cons(car=leaf, cdr=None)  # (x . (leaf . None))
+                assert tar_cons.cdr is NIL
+                tar_cons.cdr = Cons(car=leaf, cdr=NIL)  # (x . (leaf . None))
                 self.q[-1] = root_cons, tar_cons.cdr
             return True
 
         def start_list(self):
-            cons = Cons(car=None, cdr=None)
+            cons = Cons(car=NIL, cdr=NIL)
             self.q.append((cons, cons))
 
         def close_list(self):
@@ -147,7 +167,7 @@ class Lexer:
         self.string_building = False
 
         # Case-insensitive names, comments begin w/ `;`
-        lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().upper().split('\n')))
+        lines = list(map(lambda l: l if ';' not in l else l[:l.index(';')], code.strip().split('\n')))
         for line in lines:
             for char in line:
                 if char == '"':
@@ -195,7 +215,7 @@ class Lexer:
                 try:
                     atom = Number(float(self.symbol_build))
                 except ValueError:
-                    atom = Symbol(self.symbol_build)
+                    atom = Symbol(self.symbol_build.upper())
             # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
@@ -220,12 +240,12 @@ class BuiltIns:
                 if actual < expected:
                     raise Error.InvalidNOFArgumentsException
 
-    class Add(BuiltInFunction):
+    class AddFunc(BuiltInFunction):
         def call(self, arguments, env):
             total = 0
             arg_count = 0
             argument = arguments
-            while argument is not None:
+            while argument is not NIL:
                 val = self.eval_method(argument.car, env).val
                 total += val
                 argument = argument.cdr
@@ -233,12 +253,12 @@ class BuiltIns:
             self.arg_count_check(2, arg_count, False)
             return Number(total)
 
-    class Diff(BuiltInFunction):
+    class DiffFunc(BuiltInFunction):
         def call(self, arguments, env):
             arg_count = 0
             total = 0
             argument = arguments
-            while argument is not None:
+            while argument is not NIL:
                 val = self.eval_method(argument.car, env).val
                 if arg_count == 0:
                     total = val
@@ -249,12 +269,12 @@ class BuiltIns:
             self.arg_count_check(2, arg_count, False)
             return Number(total)
 
-    class Prod(BuiltInFunction):
+    class ProdFunc(BuiltInFunction):
         def call(self, arguments, env):
             arg_count = 0
             total = 1
             argument = arguments
-            while argument is not None:
+            while argument is not NIL:
                 val = self.eval_method(argument.car, env).val
                 total *= val
                 argument = argument.cdr
@@ -262,12 +282,12 @@ class BuiltIns:
             self.arg_count_check(2, arg_count, False)
             return Number(total)
 
-    class Quot(BuiltInFunction):
+    class QuotFunc(BuiltInFunction):
         def call(self, arguments, env):
             arg_count = 0
             total = 0
             argument = arguments
-            while argument is not None:
+            while argument is not NIL:
                 val = self.eval_method(argument.car, env).val
                 if arg_count == 0:
                     total = val
@@ -278,26 +298,61 @@ class BuiltIns:
             self.arg_count_check(2, arg_count, True)
             return Number(total)
 
-    class Cons(BuiltInFunction):
+    class ConsFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if type(arguments.cdr) is Cons:
+                if arguments.cdr.cdr is not NIL:  # A third argument exists
+                    raise Error.InvalidNOFArgumentsException
+            return Cons(self.eval_method(arguments.car, env),
+                        self.eval_method(arguments.cdr.car, env))
+
+    class ListFunc(BuiltInFunction):
         def call(self, arguments: Cons, env: Environment):
             return arguments
+
+    class NthFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if type(arguments.cdr) is Cons:
+                if arguments.cdr.cdr is not NIL:  # A third argument exists
+                    raise Error.InvalidNOFArgumentsException
+            n = self.eval_method(arguments.car, env).val
+            r = self.eval_method(arguments.cdr.car, env)
+            while n > 0:
+                r = r.cdr
+                if r is NIL:
+                    return r
+                n -= 1
+            return r.car
+
+    class CarFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if arguments.cdr is not NIL:
+                raise Error.InvalidNOFArgumentsException
+            return self.eval_method(arguments.car, env).car
+
+    class CdrFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if arguments.cdr is not NIL:
+                raise Error.InvalidNOFArgumentsException
+            return self.eval_method(arguments.car, env).cdr
 
 
 class Evaluator:
     def __init__(self):
         global_vars = {
-            "NIL": None,
+            "NIL": NIL,
             "T": None,
         }
         global_funcs = {
-            "+": BuiltIns.Add(self.evaluate),
-            "-": BuiltIns.Diff(self.evaluate),
-            "*": BuiltIns.Prod(self.evaluate),
-            "/": BuiltIns.Quot(self.evaluate),
-            "CONS": BuiltIns.Cons(self.evaluate),
-            "CAR": None,
-            "CDR": None,
-            "LIST": None,
+            "+": BuiltIns.AddFunc(self.evaluate),
+            "-": BuiltIns.DiffFunc(self.evaluate),
+            "*": BuiltIns.ProdFunc(self.evaluate),
+            "/": BuiltIns.QuotFunc(self.evaluate),
+            "CONS": BuiltIns.ConsFunc(self.evaluate),
+            "CAR": BuiltIns.CarFunc(self.evaluate),
+            "CDR": BuiltIns.CdrFunc(self.evaluate),
+            "LIST": BuiltIns.ListFunc(self.evaluate),
+            "NTH": BuiltIns.NthFunc(self.evaluate),
             "LAMBDA": None,
             "DEFVAR": None,
             "DEFUN": None,
@@ -322,7 +377,7 @@ class Evaluator:
             # (func . args)
             try:
                 if type(obj.car) is not Symbol:
-                    raise Error.IllegalFunctionIdentifierException(obj)
+                    raise Error.IllegalFunctionCallException(obj)
                 function = env.get_func(obj.car)
             except KeyError:
                 raise Error.UndefinedFunctionException(obj)
@@ -338,7 +393,7 @@ class Evaluator:
         lexical_env = Environment(*env.copy())  # Env to run function inside
         parameter = function.parameters
         argument = arguments
-        while parameter is not None:  # Binding values to parameters in env
+        while parameter is not NIL:  # Binding values to parameters in env
             lexical_env.bind_var(parameter.car, self.evaluate(argument.car, lexical_env))
             parameter = parameter.cdr
             argument = arguments.cdr
@@ -348,14 +403,7 @@ class Evaluator:
 lexer = Lexer()
 evaluator = Evaluator()
 lexed = lexer.lex("""
-(* (/ (+ 1 (+ 2 3)) 2) 3 3)
-(cons 1 2)
+(cdr (cons 1 (cons 2 (+ 1 2))))
 """)
 result = evaluator.evaluate(lexed[0], evaluator.global_env)
 print(result)
-print(result.val)
-result = evaluator.evaluate(lexed[1], evaluator.global_env)
-print(result)
-print(result.car.val)
-print(result.cdr.car.val)
-pass
