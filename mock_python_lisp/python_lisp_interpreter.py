@@ -12,6 +12,8 @@
 
 class Error:
     # Lisp errors
+    class IllegalFunctionNameException(Exception): pass
+
     class UnmatchedParenthesesException(Exception): pass
 
     class UndefinedFunctionException(Exception): pass
@@ -60,12 +62,6 @@ class Symbol(Atom):
     pass
 
 
-class Function:
-    def __init__(self, parameters, form):
-        self.parameters = parameters
-        self.form = form
-
-
 class Cons:
     def __init__(self, car, cdr):
         self.car = car
@@ -73,6 +69,12 @@ class Cons:
 
     def __str__(self):
         return f'({str(self.car)} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{str(self.cdr)})'
+
+
+class Function:
+    def __init__(self, parameters: Cons, expression: Cons):
+        self.parameters = parameters
+        self.expression = expression
 
 
 class Environment:
@@ -312,6 +314,7 @@ class BuiltIns:
 
     class NthFunc(BuiltInFunction):
         def call(self, arguments: Cons, env: Environment):
+            # Could be implemented using recursion & pre-built methods `car` and `cdr`
             if type(arguments.cdr) is Cons:
                 if arguments.cdr.cdr is not NIL:  # A third argument exists
                     raise Error.InvalidNOFArgumentsException
@@ -336,6 +339,14 @@ class BuiltIns:
                 raise Error.InvalidNOFArgumentsException
             return self.eval_method(arguments.car, env).cdr
 
+    class DefunFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if type(arguments.car) is not Symbol:
+                raise Error.IllegalFunctionNameException
+            env.bind_func(arguments.car, Function(parameters=arguments.cdr.car,
+                                                  expression=arguments.cdr.cdr))
+            return arguments.car
+
 
 class Evaluator:
     def __init__(self):
@@ -353,9 +364,9 @@ class Evaluator:
             "CDR": BuiltIns.CdrFunc(self.evaluate),
             "LIST": BuiltIns.ListFunc(self.evaluate),
             "NTH": BuiltIns.NthFunc(self.evaluate),
+            "DEFUN": BuiltIns.DefunFunc(self.evaluate),
             "LAMBDA": None,
             "DEFVAR": None,
-            "DEFUN": None,
             "FUNCALL": None,
             "IF": None,
             "COND": None,
@@ -364,7 +375,7 @@ class Evaluator:
         self.global_env = Environment(global_vars, global_funcs)
 
     def evaluate(self, obj, env: Environment):
-        if type(obj) is Number or type(obj) is String:
+        if type(obj) is Number or type(obj) is String or obj is NIL:
             return obj
         elif type(obj) is Symbol:
             # Should only be a Symbol holding a variable name;
@@ -393,17 +404,27 @@ class Evaluator:
         lexical_env = Environment(*env.copy())  # Env to run function inside
         parameter = function.parameters
         argument = arguments
-        while parameter is not NIL:  # Binding values to parameters in env
+        while parameter is not NIL and parameter.car is not NIL:  # Binding values to parameters in env
+            if argument is NIL:
+                raise Error.InvalidNOFArgumentsException
             lexical_env.bind_var(parameter.car, self.evaluate(argument.car, lexical_env))
             parameter = parameter.cdr
-            argument = arguments.cdr
-        return self.evaluate(function.form, lexical_env)
+            argument = argument.cdr
+        e = function.expression
+        while e is not NIL and e.car is not NIL:
+            result = self.evaluate(e.car, lexical_env)
+            if e.cdr is NIL:
+                return result
+            else:
+                e = e.cdr
 
 
 lexer = Lexer()
 evaluator = Evaluator()
 lexed = lexer.lex("""
-(cdr (cons 1 (cons 2 (+ 1 2))))
+(defun a (b c d e) (+ b c) d e)
+(a 1 (+ 2 3) 1207490 (- 10 10 50 -50 9))
 """)
-result = evaluator.evaluate(lexed[0], evaluator.global_env)
-print(result)
+print(lexed)
+for exp in lexed:
+    print(evaluator.evaluate(exp, evaluator.global_env))
