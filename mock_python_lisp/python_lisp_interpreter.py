@@ -27,14 +27,6 @@ class Error:
     class IllegalFunctionCallException(Exception): pass
 
 
-class NIL:
-    def __str__(self):
-        return "NIL"
-
-
-NIL = NIL()
-
-
 class Atom:
     # Non-cons object
     def __init__(self, val):
@@ -44,17 +36,15 @@ class Atom:
         return str(self.val)
 
 
-class SelfEvaluatingObject(Atom):
-    pass
+class Cons:
+    def __init__(self, car, cdr):
+        self.car = car
+        self.cdr = cdr
 
-
-class Number(SelfEvaluatingObject):
-    pass
-
-
-class String(SelfEvaluatingObject):
     def __str__(self):
-        return f"'{self.val}'"
+        if self.cdr is BuiltIns.NIL:
+            return f'({str(self.car)})'
+        return f'({str(self.car)} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{str(self.cdr)})'
 
 
 class Symbol(Atom):
@@ -62,16 +52,7 @@ class Symbol(Atom):
     pass
 
 
-class Cons:
-    def __init__(self, car, cdr):
-        self.car = car
-        self.cdr = cdr
-
-    def __str__(self):
-        return f'({str(self.car)} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{str(self.cdr)})'
-
-
-class Function:
+class DefinedFunc:
     def __init__(self, parameters: Cons, expression: Cons):
         self.parameters = parameters
         self.expression = expression
@@ -102,25 +83,166 @@ class Environment:
         return self.var_bindings.copy(), self.func_bindings.copy()
 
 
+class BuiltIns:
+    class NilClass:
+        # SelfEvalObj
+        def __str__(self):
+            return "NIL"
+
+    NIL = NilClass()
+
+    class Number(Atom):
+        # SelfEvalObj
+        pass
+
+    class String(Atom):
+        # SelfEvalObj
+        def __str__(self):
+            return f"'{self.val}'"
+
+    class BuiltInFunction:
+        def __init__(self, eval_method):
+            self.eval_method = eval_method
+
+        def call(self, arguments: Cons, env: Environment):
+            pass
+
+        @staticmethod
+        def arg_count_check(expected: int, actual: int, exact: bool):
+            if exact:
+                if actual != expected:
+                    raise Error.InvalidNOFArgumentsException
+            else:
+                if actual < expected:
+                    raise Error.InvalidNOFArgumentsException
+
+    class AddFunc(BuiltInFunction):
+        def call(self, arguments, env):
+            total = 0
+            arg_count = 0
+            argument = arguments
+            while argument is not BuiltIns.NIL:
+                val = self.eval_method(argument.car, env).val
+                total += val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return BuiltIns.Number(total)
+
+    class DiffFunc(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 0
+            argument = arguments
+            while argument is not BuiltIns.NIL:
+                val = self.eval_method(argument.car, env).val
+                if arg_count == 0:
+                    total = val
+                else:
+                    total -= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return BuiltIns.Number(total)
+
+    class ProdFunc(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 1
+            argument = arguments
+            while argument is not BuiltIns.NIL:
+                val = self.eval_method(argument.car, env).val
+                total *= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, False)
+            return BuiltIns.Number(total)
+
+    class QuotFunc(BuiltInFunction):
+        def call(self, arguments, env):
+            arg_count = 0
+            total = 0
+            argument = arguments
+            while argument is not BuiltIns.NIL:
+                val = self.eval_method(argument.car, env).val
+                if arg_count == 0:
+                    total = val
+                else:
+                    total /= val
+                argument = argument.cdr
+                arg_count += 1
+            self.arg_count_check(2, arg_count, True)
+            return BuiltIns.Number(total)
+
+    class ConsFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if type(arguments.cdr) is Cons:
+                if arguments.cdr.cdr is not BuiltIns.NIL:  # A third argument exists
+                    raise Error.InvalidNOFArgumentsException
+            return Cons(self.eval_method(arguments.car, env),
+                        self.eval_method(arguments.cdr.car, env))
+
+    class ListFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            return arguments
+
+    class NthFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            # Could be implemented using recursion & pre-built methods `car` and `cdr`
+            if type(arguments.cdr) is Cons:
+                if arguments.cdr.cdr is not BuiltIns.NIL:  # A third argument exists
+                    raise Error.InvalidNOFArgumentsException
+            n = self.eval_method(arguments.car, env).val
+            r = self.eval_method(arguments.cdr.car, env)
+            while n > 0:
+                r = r.cdr
+                if r is BuiltIns.NIL:
+                    return r
+                n -= 1
+            return r.car
+
+    class CarFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if arguments.cdr is not BuiltIns.NIL:
+                raise Error.InvalidNOFArgumentsException
+            return self.eval_method(arguments.car, env).car
+
+    class CdrFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if arguments.cdr is not BuiltIns.NIL:
+                raise Error.InvalidNOFArgumentsException
+            return self.eval_method(arguments.car, env).cdr
+
+    class DefunFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            if type(arguments.car) is not Symbol:
+                raise Error.IllegalFunctionNameException
+            env.bind_func(arguments.car, DefinedFunc(parameters=arguments.cdr.car,
+                                                     expression=arguments.cdr.cdr))
+            return arguments.car
+
+
 class Lexer:
     class ConsBuilder:
         def __init__(self):
             """
             root & tar cons for easy bookkeeping: what to return and what to add to, respectively
+            When adding, assert that `target.cdr` is `NIL`, then set `target.cdr` to `Cons(val, NIL)`
 
-            Note: trailing `None` is redacted from following examples:
+            Note: trailing `NIL` is redacted from root reprs:
+
             ToBeConsed: (1 2 3 4)
-            Root          | Target
-            (1 2)            (1 2)
-            (1 (2 3))        (2 3)
-            (1 (2 (3 4)))    (3 4)
+            Root          |  Target
+            (1 (2))         (2 NIL)
+            (1 (2 3))       (3 NIL)
+            (1 (2 (3 4)))   (4 NIL)
 
             ToBeConsed: (1 (2 3) 4)
-            Root           | Target
-            (1 None)       (1 None)
-            (2 3)             (2 3)
-            (1 (2 3))     (1 (2 3))
-            (1 ((2 3) 4)  ((2 3) 4)
+            Root         |         Target
+            (1)                   (1 NIL)
+            (2 3)                 (3 NIL)
+            (1 (2 3))         ((2 3) NIL)
+            (1 ((2 3) 4))         (4 NIL)
             """
             self.q = []
 
@@ -131,21 +253,23 @@ class Lexer:
             if len(self.q) == 0:  # Not in any list
                 return False
             root_cons, tar_cons = self.q[-1]
-            if tar_cons.car is NIL:  # (NIL . NIL)
+            if tar_cons.car is None:  # (None . NIL)
                 # Should only be reached on 1st call immediately after `start_list`
                 tar_cons.car = leaf
             else:  # (x . NIL)
-                assert tar_cons.cdr is NIL
-                tar_cons.cdr = Cons(car=leaf, cdr=NIL)  # (x . (leaf . None))
+                assert tar_cons.cdr is BuiltIns.NIL
+                tar_cons.cdr = Cons(car=leaf, cdr=BuiltIns.NIL)  # (x . (leaf . NIL))
                 self.q[-1] = root_cons, tar_cons.cdr
             return True
 
         def start_list(self):
-            cons = Cons(car=NIL, cdr=NIL)
+            cons = Cons(car=None, cdr=BuiltIns.NIL)
             self.q.append((cons, cons))
 
         def close_list(self):
             cons, _ = self.q.pop()
+            if cons.car is None:  # Empty list
+                cons = BuiltIns.NIL
             if len(self.q) == 0:
                 return cons
             self.add(cons)
@@ -211,11 +335,16 @@ class Lexer:
             # `if val.startswith("'")...
 
             if self.string_building:
-                atom = String(str(self.symbol_build))
+                atom = BuiltIns.String(str(self.symbol_build))
                 self.string_building = False
             else:
                 try:
-                    atom = Number(float(self.symbol_build))
+                    fval = float(self.symbol_build)
+                    ival = int(self.symbol_build)
+                    if fval != ival:
+                        atom = BuiltIns.Number(fval)
+                    else:
+                        atom = BuiltIns.Number(ival)
                 except ValueError:
                     atom = Symbol(self.symbol_build.upper())
             # If `atom` is outside list:
@@ -225,133 +354,10 @@ class Lexer:
             self.symbol_build = ''
 
 
-class BuiltIns:
-    class BuiltInFunction:
-        def __init__(self, eval_method):
-            self.eval_method = eval_method
-
-        def call(self, arguments: Cons, env: Environment):
-            pass
-
-        @staticmethod
-        def arg_count_check(expected: int, actual: int, exact: bool):
-            if exact:
-                if actual != expected:
-                    raise Error.InvalidNOFArgumentsException
-            else:
-                if actual < expected:
-                    raise Error.InvalidNOFArgumentsException
-
-    class AddFunc(BuiltInFunction):
-        def call(self, arguments, env):
-            total = 0
-            arg_count = 0
-            argument = arguments
-            while argument is not NIL:
-                val = self.eval_method(argument.car, env).val
-                total += val
-                argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
-            return Number(total)
-
-    class DiffFunc(BuiltInFunction):
-        def call(self, arguments, env):
-            arg_count = 0
-            total = 0
-            argument = arguments
-            while argument is not NIL:
-                val = self.eval_method(argument.car, env).val
-                if arg_count == 0:
-                    total = val
-                else:
-                    total -= val
-                argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
-            return Number(total)
-
-    class ProdFunc(BuiltInFunction):
-        def call(self, arguments, env):
-            arg_count = 0
-            total = 1
-            argument = arguments
-            while argument is not NIL:
-                val = self.eval_method(argument.car, env).val
-                total *= val
-                argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
-            return Number(total)
-
-    class QuotFunc(BuiltInFunction):
-        def call(self, arguments, env):
-            arg_count = 0
-            total = 0
-            argument = arguments
-            while argument is not NIL:
-                val = self.eval_method(argument.car, env).val
-                if arg_count == 0:
-                    total = val
-                else:
-                    total /= val
-                argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, True)
-            return Number(total)
-
-    class ConsFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if type(arguments.cdr) is Cons:
-                if arguments.cdr.cdr is not NIL:  # A third argument exists
-                    raise Error.InvalidNOFArgumentsException
-            return Cons(self.eval_method(arguments.car, env),
-                        self.eval_method(arguments.cdr.car, env))
-
-    class ListFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            return arguments
-
-    class NthFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            # Could be implemented using recursion & pre-built methods `car` and `cdr`
-            if type(arguments.cdr) is Cons:
-                if arguments.cdr.cdr is not NIL:  # A third argument exists
-                    raise Error.InvalidNOFArgumentsException
-            n = self.eval_method(arguments.car, env).val
-            r = self.eval_method(arguments.cdr.car, env)
-            while n > 0:
-                r = r.cdr
-                if r is NIL:
-                    return r
-                n -= 1
-            return r.car
-
-    class CarFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if arguments.cdr is not NIL:
-                raise Error.InvalidNOFArgumentsException
-            return self.eval_method(arguments.car, env).car
-
-    class CdrFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if arguments.cdr is not NIL:
-                raise Error.InvalidNOFArgumentsException
-            return self.eval_method(arguments.car, env).cdr
-
-    class DefunFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if type(arguments.car) is not Symbol:
-                raise Error.IllegalFunctionNameException
-            env.bind_func(arguments.car, Function(parameters=arguments.cdr.car,
-                                                  expression=arguments.cdr.cdr))
-            return arguments.car
-
-
 class Evaluator:
     def __init__(self):
         global_vars = {
-            "NIL": NIL,
+            "NIL": BuiltIns.NIL,
             "T": None,
         }
         global_funcs = {
@@ -367,6 +373,8 @@ class Evaluator:
             "DEFUN": BuiltIns.DefunFunc(self.evaluate),
             "LAMBDA": None,
             "DEFVAR": None,
+            "FUNCTION": None,
+            "QUOTE": None,
             "FUNCALL": None,
             "IF": None,
             "COND": None,
@@ -375,45 +383,46 @@ class Evaluator:
         self.global_env = Environment(global_vars, global_funcs)
 
     def evaluate(self, obj, env: Environment):
-        if type(obj) is Number or type(obj) is String or obj is NIL:
+        if obj is BuiltIns.NIL or type(obj) is BuiltIns.Number or type(obj) is BuiltIns.String:
+            # SelfEvalObjs
             return obj
         elif type(obj) is Symbol:
-            # Should only be a Symbol holding a variable name;
-            # Function names should be (function x) in a list, not evaluated as a Symbol
+            # Should only be a Symbol representing a variable name;
+            # Function names should be evaluated by `FUNCTION` in (function x), not evaluated as a Symbol
             try:
                 return env.get_var(obj)
             except KeyError:
                 raise Error.UndefinedVariableException(obj)
         elif type(obj) is Cons:
             # (func . args)
+            if type(obj.car) is not Symbol:
+                raise Error.IllegalFunctionCallException(obj)
             try:
-                if type(obj.car) is not Symbol:
-                    raise Error.IllegalFunctionCallException(obj)
                 function = env.get_func(obj.car)
             except KeyError:
                 raise Error.UndefinedFunctionException(obj)
             arguments = obj.cdr
-            if issubclass(type(function), BuiltIns.BuiltInFunction):
-                return function.call(arguments, env)
-            else:
-                return self.call_function(function, arguments, env)
+            return self.call_function(function, arguments, env)
         else:
             raise Exception(obj)
 
-    def call_function(self, function: Function, arguments: Cons, env: Environment):
+    def call_function(self, function, arguments: Cons, env: Environment):
+        if issubclass(type(function), BuiltIns.BuiltInFunction):
+            return function.call(arguments, env)  # Use built-in implementation
+        assert type(function) is DefinedFunc
         lexical_env = Environment(*env.copy())  # Env to run function inside
         parameter = function.parameters
         argument = arguments
-        while parameter is not NIL and parameter.car is not NIL:  # Binding values to parameters in env
-            if argument is NIL:
+        while parameter is not BuiltIns.NIL:  # Binding values to parameters
+            if argument is BuiltIns.NIL:
                 raise Error.InvalidNOFArgumentsException
             lexical_env.bind_var(parameter.car, self.evaluate(argument.car, lexical_env))
             parameter = parameter.cdr
             argument = argument.cdr
         e = function.expression
-        while e is not NIL and e.car is not NIL:
+        while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
             result = self.evaluate(e.car, lexical_env)
-            if e.cdr is NIL:
+            if e.cdr is BuiltIns.NIL:
                 return result
             else:
                 e = e.cdr
@@ -424,6 +433,11 @@ evaluator = Evaluator()
 lexed = lexer.lex("""
 (defun a (b c d e) (+ b c) d e)
 (a 1 (+ 2 3) 1207490 (- 10 10 50 -50 9))
+(list 1 2 3 4)
+(cons () 1)
+(defun a () (+ 1 3))
+(a)
+"hi"
 """)
 print(lexed)
 for exp in lexed:
