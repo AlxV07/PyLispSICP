@@ -10,6 +10,8 @@
 # If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
 # Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
 
+# TODO: Environment Lock Binding Violation; Fix up Nth Func; Finish BuiltInFuncs
+
 class Error:
     # Lisp errors
     class IllegalFunctionNameException(Exception): pass
@@ -25,6 +27,8 @@ class Error:
     class InvalidNOFArgumentsException(Exception): pass
 
     class IllegalFunctionCallException(Exception): pass
+
+    class SymbolLockBoundViolationException(Exception): pass
 
 
 class Atom:
@@ -59,11 +63,7 @@ class DefinedFunc:
 
 
 class Environment:
-    def __init__(self, var_bindings=None, func_bindings=None):
-        if var_bindings is None:
-            var_bindings = dict()
-        if func_bindings is None:
-            func_bindings = dict()
+    def __init__(self, var_bindings: dict, func_bindings: dict):
         self.var_bindings = var_bindings
         self.func_bindings = func_bindings
 
@@ -89,7 +89,19 @@ class BuiltIns:
         def __str__(self):
             return "NIL"
 
+        def __bool__(self):
+            return False
+
     NIL = NilClass()
+
+    class TClass:
+        def __str__(self):
+            return "T"
+
+        def __bool__(self):
+            return True
+
+    T = TClass()
 
     class Number(Atom):
         # SelfEvalObj
@@ -108,77 +120,121 @@ class BuiltIns:
             pass
 
         @staticmethod
-        def arg_count_check(expected: int, actual: int, exact: bool):
-            if exact:
-                if actual != expected:
-                    raise Error.InvalidNOFArgumentsException
-            else:
-                if actual < expected:
-                    raise Error.InvalidNOFArgumentsException
+        def at_least_args_check(arguments: Cons, nof_args: int):
+            if nof_args == 0: return
+            arg = arguments
+            count = 0
+            while arg is not BuiltIns.NIL:
+                count += 1
+                if count == nof_args:
+                    return
+                arg = arg.cdr
+            raise Error.InvalidNOFArgumentsException
+
+        @staticmethod
+        def exact_args_check(arguments: Cons, nof_args: int):
+            arg = arguments
+            count = 0
+            while arg is not BuiltIns.NIL:
+                count += 1
+                if count == nof_args:
+                    if arg.cdr is not BuiltIns.NIL:
+                        raise Error.InvalidNOFArgumentsException
+                    return
+                arg = arg.cdr
+            raise Error.InvalidNOFArgumentsException
 
     class AddFunc(BuiltInFunction):
         def call(self, arguments, env):
             total = 0
-            arg_count = 0
             argument = arguments
             while argument is not BuiltIns.NIL:
-                val = self.eval_method(argument.car, env).val
-                total += val
+                total += self.eval_method(argument.car, env).val
                 argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
             return BuiltIns.Number(total)
 
     class DiffFunc(BuiltInFunction):
         def call(self, arguments, env):
-            arg_count = 0
-            total = 0
+            self.at_least_args_check(arguments, 1)
+            total = 0 if arguments.cdr is BuiltIns.NIL else None  # Only 1 arg?
             argument = arguments
             while argument is not BuiltIns.NIL:
-                val = self.eval_method(argument.car, env).val
-                if arg_count == 0:
-                    total = val
+                if total is None:  # Set total to start subtract from
+                    total = self.eval_method(argument.car, env).val
                 else:
-                    total -= val
+                    total -= self.eval_method(argument.car, env).val
                 argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
             return BuiltIns.Number(total)
 
     class ProdFunc(BuiltInFunction):
         def call(self, arguments, env):
-            arg_count = 0
             total = 1
             argument = arguments
             while argument is not BuiltIns.NIL:
-                val = self.eval_method(argument.car, env).val
-                total *= val
+                total *= self.eval_method(argument.car, env).val
                 argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, False)
             return BuiltIns.Number(total)
 
     class QuotFunc(BuiltInFunction):
         def call(self, arguments, env):
-            arg_count = 0
-            total = 0
+            self.at_least_args_check(arguments, 1)
+            total = 1 if arguments.cdr is BuiltIns.NIL else None  # Only 1 arg?
             argument = arguments
             while argument is not BuiltIns.NIL:
-                val = self.eval_method(argument.car, env).val
-                if arg_count == 0:
-                    total = val
+                if total is None:  # Set total to start dividing
+                    total = self.eval_method(argument.car, env).val
                 else:
-                    total /= val
+                    total /= self.eval_method(argument.car, env).val
                 argument = argument.cdr
-                arg_count += 1
-            self.arg_count_check(2, arg_count, True)
             return BuiltIns.Number(total)
+
+    class EqualFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.at_least_args_check(arguments, 1)
+            check = None
+            argument = arguments
+            while argument is not BuiltIns.NIL:
+                if check is None:
+                    check = self.eval_method(argument.car, env).val
+                else:
+                    if check != self.eval_method(argument.car, env).val:
+                        return BuiltIns.NIL
+                argument = argument.cdr
+            return BuiltIns.T
+
+    class GreaterThanFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.exact_args_check(arguments, 2)
+            if self.eval_method(arguments.car, env).val > self.eval_method(arguments.cdr.car, env).val:
+                return BuiltIns.T
+            return BuiltIns.NIL
+
+    class LessThanFunc(GreaterThanFunc):
+        def call(self, arguments: Cons, env: Environment):
+            self.exact_args_check(arguments, 2)
+            if self.eval_method(arguments.car, env).val < self.eval_method(arguments.cdr.car, env).val:
+                return BuiltIns.T
+            return BuiltIns.NIL
+
+    class NotFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.exact_args_check(arguments, 1)
+            if self.eval_method(arguments.car, env) is BuiltIns.T:
+                return BuiltIns.NIL
+            return BuiltIns.T
+
+    class DefunFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.at_least_args_check(arguments, 2)
+            if type(arguments.car) is not Symbol:
+                raise Error.IllegalFunctionNameException
+            env.bind_func(arguments.car, DefinedFunc(parameters=arguments.cdr.car,
+                                                     expression=arguments.cdr.cdr))
+            return arguments.car  # Func name
 
     class ConsFunc(BuiltInFunction):
         def call(self, arguments: Cons, env: Environment):
-            if type(arguments.cdr) is Cons:
-                if arguments.cdr.cdr is not BuiltIns.NIL:  # A third argument exists
-                    raise Error.InvalidNOFArgumentsException
+            self.exact_args_check(arguments, 2)
             return Cons(self.eval_method(arguments.car, env),
                         self.eval_method(arguments.cdr.car, env))
 
@@ -186,12 +242,23 @@ class BuiltIns:
         def call(self, arguments: Cons, env: Environment):
             return arguments
 
+    class CarFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.exact_args_check(arguments, 1)
+            return self.eval_method(arguments.car, env).car
+
+    class CdrFunc(BuiltInFunction):
+        def call(self, arguments: Cons, env: Environment):
+            self.exact_args_check(arguments, 1)
+            return self.eval_method(arguments.car, env).cdr
+
+    # Fix up NthFunc using other built-ins
     class NthFunc(BuiltInFunction):
         def call(self, arguments: Cons, env: Environment):
-            # Could be implemented using recursion & pre-built methods `car` and `cdr`
-            if type(arguments.cdr) is Cons:
-                if arguments.cdr.cdr is not BuiltIns.NIL:  # A third argument exists
-                    raise Error.InvalidNOFArgumentsException
+            if arguments is BuiltIns.NIL or \
+                    type(arguments.cdr) is Cons and arguments.cdr.cdr is not BuiltIns.NIL:  # > 2 arguments
+                raise Error.InvalidNOFArgumentsException
+
             n = self.eval_method(arguments.car, env).val
             r = self.eval_method(arguments.cdr.car, env)
             while n > 0:
@@ -200,26 +267,6 @@ class BuiltIns:
                     return r
                 n -= 1
             return r.car
-
-    class CarFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if arguments.cdr is not BuiltIns.NIL:
-                raise Error.InvalidNOFArgumentsException
-            return self.eval_method(arguments.car, env).car
-
-    class CdrFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if arguments.cdr is not BuiltIns.NIL:
-                raise Error.InvalidNOFArgumentsException
-            return self.eval_method(arguments.car, env).cdr
-
-    class DefunFunc(BuiltInFunction):
-        def call(self, arguments: Cons, env: Environment):
-            if type(arguments.car) is not Symbol:
-                raise Error.IllegalFunctionNameException
-            env.bind_func(arguments.car, DefinedFunc(parameters=arguments.cdr.car,
-                                                     expression=arguments.cdr.cdr))
-            return arguments.car
 
 
 class Lexer:
@@ -339,14 +386,12 @@ class Lexer:
                 self.string_building = False
             else:
                 try:
-                    fval = float(self.symbol_build)
-                    ival = int(self.symbol_build)
-                    if fval != ival:
-                        atom = BuiltIns.Number(fval)
-                    else:
-                        atom = BuiltIns.Number(ival)
+                    atom = BuiltIns.Number(int(self.symbol_build))
                 except ValueError:
-                    atom = Symbol(self.symbol_build.upper())
+                    try:
+                        atom = BuiltIns.Number(float(self.symbol_build))
+                    except ValueError:
+                        atom = Symbol(self.symbol_build.upper())
             # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
@@ -358,7 +403,7 @@ class Evaluator:
     def __init__(self):
         global_vars = {
             "NIL": BuiltIns.NIL,
-            "T": None,
+            "T": BuiltIns.T,
         }
         global_funcs = {
             "+": BuiltIns.AddFunc(self.evaluate),
@@ -377,6 +422,10 @@ class Evaluator:
             "QUOTE": None,
             "FUNCALL": None,
             "IF": None,
+            "=": BuiltIns.EqualFunc(self.evaluate),
+            ">": BuiltIns.GreaterThanFunc(self.evaluate),
+            "<": BuiltIns.LessThanFunc(self.evaluate),
+            "NOT": BuiltIns.NotFunc(self.evaluate),
             "COND": None,
             "PRINT": None,
         }
@@ -438,6 +487,13 @@ lexed = lexer.lex("""
 (defun a () (+ 1 3))
 (a)
 "hi"
+(not (not (= 0 (- 1 1))))
+(> 1 0)
+(not (< 1 (+ 200 123)))
+(- 5 3 1.0)
+(+)
+(* 1 2 3 4 5)
+(= (/ 5 1 (+ 2 (- 5 2) ) 2) 0.5 (/ 2))
 """)
 print(lexed)
 for exp in lexed:
