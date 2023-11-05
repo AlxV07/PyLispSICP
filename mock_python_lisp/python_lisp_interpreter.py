@@ -10,7 +10,7 @@
 # If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
 # Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
 
-# TODO: Environment Lock Binding Violation; Fix up Nth Func; Finish BuiltInFuncs
+# TODO: Fix up Nth Func; Finish BuiltInFuncs
 
 class Error:
     # Lisp errors
@@ -265,6 +265,8 @@ class BuiltIns:
                 self.at_least_args_check(arguments, 2)
                 if type(arguments.car) is not BuiltIns.Symbol:
                     raise Error.IllegalFunctionNameException
+                if BuiltIns.is_symbol_globally_bound(arguments.car):
+                    raise Error.SymbolLockBoundViolationException
                 env.bind_func(arguments.car, Function(name=arguments.car, parameters=arguments.cdr.car,
                                                       expression=arguments.cdr.cdr))
                 return arguments.car  # Func name
@@ -368,6 +370,11 @@ class BuiltIns:
         "QUOTE": None,
     }
     global_env = Environment(global_vars, global_funcs)
+
+    @staticmethod
+    def is_symbol_globally_bound(symbol: Symbol) -> bool:
+        return BuiltIns.global_env.func_bindings.get(symbol.name, None) is not None or \
+                        BuiltIns.global_env.var_bindings.get(symbol.name, None) is not None
 
 
 class Lexer:
@@ -524,7 +531,7 @@ class Evaluator:
             arguments = obj.cdr
             try:
                 return function.call(arguments, env)
-            except:
+            except AttributeError:
                 raise Error.IllegalFunctionCallException
         else:
             raise Exception(obj)
@@ -540,6 +547,7 @@ lexed = lexer.lex("""
 (factorial 10)
 (function factorial)
 (funcall (function factorial) 10)
+(defun + () NIL)
 """)
 print(lexed)
 for exp in lexed:
