@@ -1,5 +1,6 @@
 # SICPPythonTranslation
-A Python translation of the (retired) MIT Computer Science book, "Structure and Interpretation of Computer Programs, Second Edition", written by Harold Abelson, Gerald Jay Sussman, & Julie Sussman.
+A Python translation of MIT's "Structure and Interpretation of Computer Programs, Second Edition", written by Harold Abelson, Gerald Jay Sussman, & Julie Sussman.
 
+I've been going through SICP in my freetime, and finding that the language of Lisp was simple enough decided to code my own interpreter to do the exercises and examples provided by the book.  I started coding an interpreter for Common Lisp myself, and after doing quite a bit and implementing basic functionality I came across Peter Norvig's Lis.py scheme interpreter; my code actually wasn't that different from his structure-wise.
 
-I am currently reading SICP, and am translating some of the Lisp code segments and pages into Python. I've also re-created some of the Lisp structures like pairs in Python, as well as some of the methods used with them. I've used these to write Lisp-ish code for the exercises in SICP.
+Status: PyLisp Interpreter is still a WIP, but supports functions, math, boolean logic, and evaluation.
