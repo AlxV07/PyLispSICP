@@ -357,6 +357,8 @@ class BuiltIns:
         "NTH": BuiltInFunctions.NthFunc(),
         "DEFUN": BuiltInFunctions.DefunFunc(),
         "DEFVAR": None,
+        "SETQ": None,
+        "LET": None,
         "FUNCTION": BuiltInFunctions.FunctionFunc(),
         "FUNCALL": BuiltInFunctions.FuncallFunc(),
         "LAMBDA": None,
@@ -377,7 +379,7 @@ class BuiltIns:
                         BuiltIns.global_env.var_bindings.get(symbol.name, None) is not None
 
 
-class Lexer:
+class Parser:
     class ConsBuilder:
         def __init__(self):
             """
@@ -439,7 +441,7 @@ class Lexer:
         self.prev_symbol = ''
         self.string_building = False
 
-    def lex(self, code: str) -> list:
+    def parse(self, code: str) -> list:
         #  Returns list of Atoms/Cons to be evaluated
         self.cons_builder.clear()
         self.result.clear()
@@ -537,9 +539,9 @@ class Evaluator:
             raise Exception(obj)
 
 
-lexer = Lexer()
+parser = Parser()
 evaluator = Evaluator()
-lexed = lexer.lex("""
+parsed = parser.parse("""
 (defun factorial (x) 
     (if (= x 1)
         1
@@ -549,6 +551,6 @@ lexed = lexer.lex("""
 (funcall (function factorial) 10)
 (defun + () NIL)
 """)
-print(lexed)
-for exp in lexed:
+print(parsed)
+for exp in parsed:
     print(evaluator.evaluate(exp, BuiltIns.global_env))
