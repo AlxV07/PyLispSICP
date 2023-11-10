@@ -10,7 +10,7 @@
 # If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
 # Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
 
-# TODO: Fix up Nth Func; Finish BuiltInFuncs
+# TODO: Finish BuiltInFuncs
 
 class Error:
     # Lisp errors
@@ -79,7 +79,7 @@ class Function:
         while parameter is not BuiltIns.NIL:  # Binding values to parameters
             if argument is BuiltIns.NIL:
                 raise Error.InvalidNOFArgumentsException
-            lexical_env.bind_var(parameter.car, Evaluator.evaluate(argument.car, lexical_env))
+            lexical_env.bind_var(parameter.car, Evaluator.evaluate(argument.car, env))
             parameter = parameter.cdr
             argument = argument.cdr
         e = self.expression
@@ -218,7 +218,7 @@ class BuiltIns:
 
         class GreaterThanFunc(BuiltInFunction):
             def __init__(self):
-                super().__init__('>')
+                super().__init__('\'>\'')
 
             def call(self, arguments: Cons, env: Environment):
                 self.exact_args_check(arguments, 2)
@@ -228,7 +228,7 @@ class BuiltIns:
 
         class LessThanFunc(BuiltInFunction):
             def __init__(self):
-                super().__init__('<')
+                super().__init__('\'<\'')
 
             def call(self, arguments: Cons, env: Environment):
                 self.exact_args_check(arguments, 2)
@@ -325,21 +325,35 @@ class BuiltIns:
                 self.exact_args_check(arguments, 1)
                 return Evaluator.evaluate(arguments.car, env).cdr
 
-        # Fix up NthFunc using other built-ins
-        class NthFunc(BuiltInFunction):
+        class PrintFunc(BuiltInFunction):
             def __init__(self):
-                super().__init__('NTH')
+                super().__init__('PRINT')
 
             def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                n = Evaluator.evaluate(arguments.car, env)
-                r = Evaluator.evaluate(arguments.cdr.car, env)
-                while n > 0:
-                    r = r.cdr
-                    if r is BuiltIns.NIL:
-                        return r
-                    n -= 1
-                return r.car
+                self.exact_args_check(arguments, 1)
+                print(evaluator.evaluate(arguments.car, env))
+                return BuiltIns.NIL
+
+        class LetFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('LET')
+
+            def call(self, arguments: Cons, env: Environment):
+                self.at_least_args_check(arguments, 2)
+                lexical_env = Environment(*env.copy())
+                parameter = arguments.car
+                while parameter is not BuiltIns.NIL:
+                    binding = parameter.car
+                    self.exact_args_check(binding, 2)
+                    lexical_env.bind_var(binding.car, Evaluator.evaluate(binding.cdr.car, env))
+                    parameter = parameter.cdr
+                e = arguments.cdr
+                while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
+                    result = Evaluator.evaluate(e.car, lexical_env)
+                    if e.cdr is BuiltIns.NIL:
+                        return result
+                    else:
+                        e = e.cdr
 
     global_vars = {
         "NIL": NIL,
@@ -354,11 +368,10 @@ class BuiltIns:
         "CAR": BuiltInFunctions.CarFunc(),
         "CDR": BuiltInFunctions.CdrFunc(),
         "LIST": BuiltInFunctions.ListFunc(),
-        "NTH": BuiltInFunctions.NthFunc(),
         "DEFUN": BuiltInFunctions.DefunFunc(),
         "DEFVAR": None,
         "SETQ": None,
-        "LET": None,
+        "LET": BuiltInFunctions.LetFunc(),
         "FUNCTION": BuiltInFunctions.FunctionFunc(),
         "FUNCALL": BuiltInFunctions.FuncallFunc(),
         "LAMBDA": None,
@@ -368,7 +381,7 @@ class BuiltIns:
         ">": BuiltInFunctions.GreaterThanFunc(),
         "<": BuiltInFunctions.LessThanFunc(),
         "NOT": BuiltInFunctions.NotFunc(),
-        "PRINT": None,
+        "PRINT": BuiltInFunctions.PrintFunc(),
         "QUOTE": None,
     }
     global_env = Environment(global_vars, global_funcs)
@@ -542,15 +555,33 @@ class Evaluator:
 parser = Parser()
 evaluator = Evaluator()
 parsed = parser.parse("""
-(defun factorial (x) 
-    (if (= x 1)
-        1
-        (* x (factorial (- x 1)))))
-(factorial 10)
-(function factorial)
-(funcall (function factorial) 10)
-(defun + () NIL)
+(defun square (x) (* x x))
+(defun abs (x)
+    (if (< x 0)
+        (* x -1)
+        x))
+(defun average (x y) 
+    (/ (+ x y) 2))
+(defun good-enough? (guess x)
+    (< (abs (- (square guess) x)) 0.001))
+(defun improve (guess x)
+    (average guess (/ x guess)))
+(defun sqrt-iter (guess x)
+    (if (good-enough? guess x)
+        guess
+        (sqrt-iter (improve guess x) x)))
+(defun sqrt (x)
+    (sqrt-iter 1.0 x))
+(print (sqrt 4))
+(print (sqrt 64)) 
+(print (sqrt 100))
+
+(print 
+    (let ((x 1) (y 2)) 
+        (print (+ x y))
+        (print (- y x))
+        x))
 """)
-print(parsed)
+run_env = Environment(*BuiltIns.global_env.copy())
 for exp in parsed:
-    print(evaluator.evaluate(exp, BuiltIns.global_env))
+    evaluator.evaluate(exp, run_env)
