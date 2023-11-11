@@ -92,7 +92,6 @@ class Function:
 
 
 class BuiltIns:
-
     class NilClass:
         def __str__(self):
             return "NIL"
@@ -443,7 +442,7 @@ class BuiltIns:
     @staticmethod
     def is_symbol_globally_bound(symbol: Symbol) -> bool:
         return BuiltIns.global_env.func_bindings.get(symbol.name, None) is not None or \
-                        BuiltIns.global_env.var_bindings.get(symbol.name, None) is not None
+            BuiltIns.global_env.var_bindings.get(symbol.name, None) is not None
 
 
 class Parser:
@@ -613,9 +612,7 @@ class Evaluator:
             raise Exception(obj)
 
 
-parser = Parser()
-evaluator = Evaluator()
-parsed = parser.parse("""
+c = """
 (defun square (x) (* x x))
 (defun abs (x)
     (if (< x 0)
@@ -677,6 +674,15 @@ parsed = parser.parse("""
 (print (x 
     (lambda (a) (+ a 3))
 ))
-""")
-run_env = Environment(*BuiltIns.global_env.copy())
-for exp in parsed: evaluator.evaluate(exp, run_env)
+"""
+
+
+class PyLispInterpreter:
+    @staticmethod
+    def run(code: str):
+        run_env = Environment(*BuiltIns.global_env.copy())
+        parser = Parser()
+        evaluator = Evaluator()
+        parsed = parser.parse(code)
+        for exp in parsed:
+            evaluator.evaluate(exp, run_env)
