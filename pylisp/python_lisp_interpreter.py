@@ -1,24 +1,12 @@
-# http://www.lispworks.com/documentation/lw50/CLHS/Body/03_aba.htm
-# 3.1.2.1 Form Evaluation
-# Forms fall into three categories: symbols, conses, and self-evaluating objects.
-
-# Symbol & self-evaluating object forms are non-cons objects, or atoms.
-# Self-evaluating objects are set values such as numbers and strings.
-# Symbols are either variables or symbol macros (expands to function).
-
-# A cons used as a form is called a compound form.
-# If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
-# Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
-
 class Error:
     # Lisp errors
-    class IllegalFunctionNameException(Exception): pass
+    class IllegalProcedureNameException(Exception): pass
 
     class IllegalVariableNameException(Exception): pass
 
     class UnmatchedParenthesesException(Exception): pass
 
-    class UndefinedFunctionException(Exception): pass
+    class UndefinedProcedureException(Exception): pass
 
     class UndefinedVariableException(Exception): pass
 
@@ -31,71 +19,110 @@ class Error:
     class SymbolLockBoundViolationException(Exception): pass
 
 
-class Cons:
+class Object:
+    # All things to be evaluated are objects
+    def __init__(self, value):
+        self.value = value
+
+    def evaluate(self, env):
+        raise Exception('Undefined Object evaluation:', self)
+
+
+class Symbol(Object):
+    # Represents a binding in the environment
+    def evaluate(self, env):
+        return env.get_var(self)
+
+    def __str__(self):
+        return str(self.value)
+
+
+class Cons(Object):
     def __init__(self, car, cdr):
+        super().__init__('CONS')
         self.car = car
         self.cdr = cdr
 
+    def evaluate(self, env):
+        proc = env.get_proc(self.car)
+        args = self.cdr
+        return proc.evaluate(env, args)
+
     def __str__(self):
         if self.cdr is BuiltIns.NIL:
-            return f'({str(self.car)})'
-        return f'({str(self.car)} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{str(self.cdr)})'
+            return f'({self.car})'
+        return f'({self.car} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{self.cdr})'
 
 
 class Environment:
-    def __init__(self, var_bindings: dict, func_bindings: dict):
+    def __init__(self, var_bindings: dict, proc_bindings: dict):
         self.var_bindings = var_bindings
-        self.func_bindings = func_bindings
+        self.proc_bindings = proc_bindings
 
     def bind_var(self, symbol, item):
-        if type(symbol) is not BuiltIns.Symbol:
+        if type(symbol) is not Symbol:
             raise Error.IllegalVariableNameException(symbol)
         if BuiltIns.is_symbol_globally_bound(symbol):
             raise Error.SymbolLockBoundViolationException(symbol)
-        self.var_bindings[symbol.name] = item
+        self.var_bindings[symbol.value] = item
 
-    def bind_func(self, symbol, item):
-        if type(symbol) is not BuiltIns.Symbol:
-            raise Error.IllegalFunctionNameException(symbol)
+    def bind_proc(self, symbol, item):
+        if type(symbol) is not Symbol:
+            raise Error.IllegalProcedureNameException(symbol)
         if BuiltIns.is_symbol_globally_bound(symbol):
             raise Error.SymbolLockBoundViolationException(symbol)
-        self.func_bindings[symbol.name] = item
+        self.proc_bindings[symbol.value] = item
 
     def get_var(self, symbol):
-        return self.var_bindings[symbol.name]
+        if type(symbol) is not Symbol:
+            raise Error.IllegalVariableNameException(symbol)
+        var = self.var_bindings.get(symbol.value)
+        if var is None:
+            raise Error.UndefinedVariableException(symbol)
+        return var
 
-    def get_func(self, symbol):
-        try:
-            return self.func_bindings[symbol.name]
-        except KeyError:
-            raise Error.UndefinedFunctionException
+    def get_proc(self, symbol):
+        if type(symbol) is not Symbol:
+            raise Error.IllegalProcedureNameException(symbol)
+        proc = self.proc_bindings.get(symbol.value)
+        if proc is None:
+            raise Error.UndefinedProcedureException(symbol)
+        return proc
 
     def copy(self):
-        return self.var_bindings.copy(), self.func_bindings.copy()
+        return self.var_bindings.copy(), self.proc_bindings.copy()
 
 
-class Function:
-    def __init__(self, name, parameters, expression):
+class Procedure:
+    def __init__(self, name):
         self.name = name
+
+    def evaluate(self, env, args):
+        raise Exception('Undefined Procedure evaluation:', self)
+
+    def __str__(self):
+        return f'#<FUNCTION {self.name}>'
+
+
+class UserDefinedProcedure(Procedure):
+    def __init__(self, name, parameters, expression):
+        super().__init__(name)
         self.parameters = parameters
         self.expression = expression
 
-    def __str__(self):
-        return f'#<FUNCTION {str(self.name)}>'
-
-    def call(self, arguments: Cons, env: Environment):
-        lexical_env = Environment(*env.copy())  # Env to run function inside
+    def evaluate(self, env, args):
+        lexical_env = Environment(*env.copy())
         parameter = self.parameters
-        argument = arguments
-        while parameter is not BuiltIns.NIL and argument is not BuiltIns.NIL:  # Binding values to parameters
-            lexical_env.bind_var(parameter.car, Evaluator.evaluate(argument.car, env))
+        arg = args
+        while parameter is not BuiltIns.NIL and arg is not BuiltIns.NIL:  # Binding values to parameters
+            lexical_env.bind_var(parameter.car, arg.car.evaluate(env))
             parameter = parameter.cdr
-            argument = argument.cdr
-        if parameter is not BuiltIns.NIL or argument is not BuiltIns.NIL:
+            arg = arg.cdr
+        if parameter is not BuiltIns.NIL or arg is not BuiltIns.NIL:  # Left over parameter or argument
             raise Error.InvalidNOFArgumentsException(self)
         e = self.expression
         while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
-            result = Evaluator.evaluate(e.car, lexical_env)
+            result = e.car.evaluate(lexical_env)
             if e.cdr is BuiltIns.NIL:
                 return result
             else:
@@ -103,340 +130,378 @@ class Function:
 
 
 class BuiltIns:
-    class NilClass:
+    class SelfEvaluatingObject(Object):
+        def evaluate(self, env):
+            return self
+
         def __str__(self):
-            return "NIL"
+            return str(self.value)
+
+    class NilClass(SelfEvaluatingObject):
+        def __init__(self):
+            super().__init__('NIL')
 
     NIL = NilClass()
 
-    class TClass:
-        def __str__(self):
-            return "T"
+    class TClass(SelfEvaluatingObject):
+        def __init__(self):
+            super().__init__('T')
 
     T = TClass()
 
-    class Symbol:
-        def __init__(self, name):
-            # Represents name of a binding in the environment
-            self.name = name
+    class Number(SelfEvaluatingObject):
+        def __add__(self, other):
+            return BuiltIns.Number(self.value + other.value)
 
-        def __str__(self):
-            return self.name
+        def __sub__(self, other):
+            return BuiltIns.Number(self.value - other.value)
 
-    class BuiltInFunctions:
-        class BuiltInFunction(Function):
-            def __init__(self, name):
-                super().__init__(name, None, None)
+        def __mul__(self, other):
+            return BuiltIns.Number(self.value * other.value)
 
-            def at_least_args_check(self, arguments: Cons, nof_args: int):
-                if nof_args == 0: return
-                arg = arguments
-                count = 0
-                while arg is not BuiltIns.NIL:
-                    count += 1
-                    if count == nof_args:
-                        return
-                    arg = arg.cdr
-                raise Error.InvalidNOFArgumentsException(self)
+        def __truediv__(self, other):
+            if other.value == 0:
+                raise ValueError("Division by zero is not allowed")
+            return BuiltIns.Number(self.value / other.value)
 
-            def exact_args_check(self, arguments: Cons, nof_args: int):
-                arg = arguments
-                count = 0
-                while arg is not BuiltIns.NIL:
-                    count += 1
-                    if count == nof_args:
-                        if arg.cdr is not BuiltIns.NIL:
-                            raise Error.InvalidNOFArgumentsException(self)
-                        return
-                    arg = arg.cdr
-                raise Error.InvalidNOFArgumentsException(self)
+        def __gt__(self, other):
+            return self.value > other.value
 
-            def call(self, arguments: Cons, env: Environment):
-                pass
+        def __lt__(self, other):
+            return self.value < other.value
 
-        class AddFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('+')
+        def __ge__(self, other):
+            return self.value >= other.value
 
-            def call(self, arguments: Cons, env: Environment):
-                total = 0
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    total += Evaluator.evaluate(argument.car, env)
-                    argument = argument.cdr
-                return total
+        def __le__(self, other):
+            return self.value <= other.value
 
-        class DiffFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('-')
+        def __eq__(self, other):
+            return self.value == other.value
 
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 1)
-                total = 0 if arguments.cdr is BuiltIns.NIL else None  # Only 1 arg?
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    if total is None:  # Set total to start subtract from
-                        total = Evaluator.evaluate(argument.car, env)
-                    else:
-                        total -= Evaluator.evaluate(argument.car, env)
-                    argument = argument.cdr
-                return total
+    class String(SelfEvaluatingObject): pass
 
-        class ProdFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('*')
-
-            def call(self, arguments: Cons, env: Environment):
-                total = 1
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    total *= Evaluator.evaluate(argument.car, env)
-                    argument = argument.cdr
-                return total
-
-        class QuotFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('/')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 1)
-                total = 1 if arguments.cdr is BuiltIns.NIL else None  # Only 1 arg?
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    if total is None:  # Set total to start dividing
-                        total = Evaluator.evaluate(argument.car, env)
-                    else:
-                        total /= Evaluator.evaluate(argument.car, env)
-                    argument = argument.cdr
-                return total
-
-        class EqualFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('=')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 1)
-                check = None
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    if check is None:
-                        check = Evaluator.evaluate(argument.car, env)
-                    else:
-                        if check != Evaluator.evaluate(argument.car, env):
-                            return BuiltIns.NIL
-                    argument = argument.cdr
-                return BuiltIns.T
-
-        class GreaterThanFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('\'>\'')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                if Evaluator.evaluate(arguments.car, env) > Evaluator.evaluate(arguments.cdr.car, env):
-                    return BuiltIns.T
-                return BuiltIns.NIL
-
-        class LessThanFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('\'<\'')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                if Evaluator.evaluate(arguments.car, env) < Evaluator.evaluate(arguments.cdr.car, env):
-                    return BuiltIns.T
-                return BuiltIns.NIL
-
-        class NotFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('NOT')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                if Evaluator.evaluate(arguments.car, env) is BuiltIns.T:
-                    return BuiltIns.NIL
-                return BuiltIns.T
-
-        class IfFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('IF')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 3)
-                #  (if T 1 0) -> arguments = (T (1 (0 NIL)))
-                if Evaluator.evaluate(arguments.car, env) is BuiltIns.T:
-                    return Evaluator.evaluate(arguments.cdr.car, env)
-                return Evaluator.evaluate(arguments.cdr.cdr.car, env)
-
-        class DefunFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('DEFUN')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 3)
-                env.bind_func(arguments.car, Function(name=arguments.car, parameters=arguments.cdr.car,
-                                                      expression=arguments.cdr.cdr))
-                return arguments.car  # Func name
-
-        class FunctionFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('FUNCTION')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                return env.get_func(arguments.car)
-
-        class FuncallFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('FUNCALL')
-
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 1)
-                return Evaluator.evaluate(arguments.car, env).call(arguments.cdr, env)
-
-        class ConsFunc(BuiltInFunction):
+    class BuiltInProcs:
+        class ConsFunc(Procedure):
             def __init__(self):
                 super().__init__('CONS')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                return Cons(Evaluator.evaluate(arguments.car, env),
-                            Evaluator.evaluate(arguments.cdr.car, env))
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                return Cons(args.car.evaluate(env),
+                            args.cdr.car.evaluate(env))
 
-        class ListFunc(BuiltInFunction):
-            def __init__(self):
-                super().__init__('LIST')
-
-            def call(self, arguments: Cons, env: Environment):
-                return arguments
-
-        class CarFunc(BuiltInFunction):
+        class CarFunc(Procedure):
             def __init__(self):
                 super().__init__('CAR')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                return Evaluator.evaluate(arguments.car, env).car
+            def call(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return args.car.evaluate(env).car
 
-        class CdrFunc(BuiltInFunction):
+        class CdrFunc(Procedure):
             def __init__(self):
                 super().__init__('CDR')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                return Evaluator.evaluate(arguments.car, env).cdr
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return args.car.evaluate(env).cdr
 
-        class PrintFunc(BuiltInFunction):
+        class ListFunc(Procedure):
             def __init__(self):
-                super().__init__('PRINT')
+                super().__init__('LIST')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                print(Evaluator.evaluate(arguments.car, env))
-                return BuiltIns.NIL
+            def evaluate(self, env, args):
+                return args
 
-        class LetFunc(BuiltInFunction):
+        class AddProc(Procedure):
             def __init__(self):
-                super().__init__('LET')
+                super().__init__('+')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 2)
-                lexical_env = Environment(*env.copy())
-                parameter = arguments.car
-                while parameter is not BuiltIns.NIL:
-                    BuiltIns.global_funcs['DEFPARAMETER'].call(parameter.car, lexical_env)
-                    parameter = parameter.cdr
-                e = arguments.cdr
-                while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
-                    result = Evaluator.evaluate(e.car, lexical_env)
-                    if e.cdr is BuiltIns.NIL:
-                        return result
-                    else:
-                        e = e.cdr
+            def evaluate(self, env, args):
+                total = BuiltIns.Number(0)
+                arg = args
+                while arg is not BuiltIns.NIL:
+                    total += arg.car.evaluate(env)
+                    arg = arg.cdr
+                return total
 
-        class QuoteFunc(BuiltInFunction):
+        class DiffProc(Procedure):
             def __init__(self):
-                super().__init__('QUOTE')
+                super().__init__('-')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 1)
-                return arguments.car
+            def evaluate(self, env, args):
+                if args is BuiltIns.NIL: raise Error.InvalidNOFArgumentsException(self)  # 0 args
+                if args.cdr is BuiltIns.NIL:  # 1 arg
+                    total = args.car.evaluate(env) * BuiltIns.Number(-1)
+                else:
+                    total = args.car.evaluate(env)
+                    arg = args.cdr
+                    while arg is not BuiltIns.NIL:
+                        total -= arg.car.evaluate(env)
+                        arg = arg.cdr
+                return total
 
-        class DefparameterFunc(BuiltInFunction):
+        class ProdProc(Procedure):
             def __init__(self):
-                super().__init__('DEFPARAMETER')
+                super().__init__('*')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
+            def evaluate(self, env, args):
+                total = BuiltIns.Number(1)
+                arg = args
+                while arg is not BuiltIns.NIL:
+                    total *= arg.car.evaluate(env)
+                    arg = arg.cdr
+                return total
 
-        class DefvarFunc(BuiltInFunction):
+        class QuotProc(Procedure):
             def __init__(self):
-                super().__init__('DEFVAR')
+                super().__init__('/')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.exact_args_check(arguments, 2)
-                try:
-                    env.get_var(arguments.car)
-                except KeyError:
-                    env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
+            def evaluate(self, env, args):
+                if args is BuiltIns.NIL: raise Error.InvalidNOFArgumentsException(self)  # 0 args
+                if args.cdr is BuiltIns.NIL:  # 1 arg
+                    total = BuiltIns.Number(1.0) / args.car.evaluate(env)
+                else:
+                    total = args.car.evaluate(env)
+                    arg = args.cdr
+                    while arg is not BuiltIns.NIL:
+                        total /= arg.car.evaluate(env)
+                        arg = arg.cdr
+                return total
 
-        class CondFunc(BuiltInFunction):
+        class EqualProc(Procedure):
+            def __init__(self):
+                super().__init__('=')
+
+            def call(self, env, args):
+                if args is BuiltIns.NIL: raise Error.InvalidNOFArgumentsException(self)  # 0 args
+                check = args.car.evaluate(env)
+                arg = args.cdr
+                while arg is not BuiltIns.NIL:
+                    if args.car.evaluate(env) != check: return BuiltIns.NIL
+                    arg = arg.cdr
+                return BuiltIns.T
+
+        class GreaterThanProc(Procedure):
+            def __init__(self):
+                super().__init__('>')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                t1 = args.car.evaluate(env)
+                t2 = args.cdr.car.evaluate(env)
+                return BuiltIns.T if t1 > t2 else BuiltIns.NIL
+
+        class LessThanProc(Procedure):
+            def __init__(self):
+                super().__init__('<')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                t1 = args.car.evaluate(env)
+                t2 = args.cdr.car.evaluate(env)
+                return BuiltIns.T if t1 < t2 else BuiltIns.NIL
+
+        class NotProc(Procedure):
+            def __init__(self):
+                super().__init__('NOT')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return BuiltIns.T if args.car.evaluate(env) is BuiltIns.NIL else BuiltIns.NIL
+
+        class IfProc(Procedure):
+            def __init__(self):
+                super().__init__('IF')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is BuiltIns.NIL or  # 2 args
+                        args.cdr.cdr.cdr is not BuiltIns.NIL):  # > 3 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                #  (if T 1 0) -> arguments = (T (1 (0 NIL)))
+                if args.car.evaluate(env) is BuiltIns.T:
+                    return args.cdr.car.evaluate(env)
+                else:
+                    return args.cdr.cdr.car.evaluate(env)
+
+        class CondProc(Procedure):
             def __init__(self):
                 super().__init__('COND')
 
-            def call(self, arguments: Cons, env: Environment):
-                argument = arguments
-                while argument is not BuiltIns.NIL:
-                    condition = argument.car.car
-                    if Evaluator.evaluate(condition, env) is BuiltIns.T:
-                        return Evaluator.evaluate(argument.car.cdr.car, env)
-                    argument = argument.cdr
+            def evaluate(self, env, args):
+                arg = args
+                while args is not BuiltIns.NIL:
+                    if arg.car.car.evaluate(env) is BuiltIns.T:
+                        return arg.car.cdr.car.evaluate(env)
+                    arg = arg.cdr
                 return BuiltIns.NIL
 
-        class LambdaFunc(BuiltInFunction):
+        class QuoteProc(Procedure):
+            def __init__(self):
+                super().__init__('QUOTE')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return args.car
+
+        class DefunProc(Procedure):
+            def __init__(self):
+                super().__init__('DEFUN')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is BuiltIns.NIL):  # 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                env.bind_proc(args.car, UserDefinedProcedure(name=args.car,
+                                                             parameters=args.cdr.car,
+                                                             expression=args.cdr.cdr))
+                return args.car
+
+        class FunctionProc(Procedure):
+            def __init__(self):
+                super().__init__('FUNCTION')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return env.get_proc(args.car)
+
+        class FuncallProc(Procedure):
+            def __init__(self):
+                super().__init__('FUNCALL')
+
+            def evaluate(self, env, args):
+                if args is BuiltIns.NIL: raise Error.InvalidNOFArgumentsException(self)  # 0 args
+                return args.car.evaluate(env).evaluate(env, args.cdr)
+
+        class LambdaProc(Procedure):
             def __init__(self):
                 super().__init__('LAMBDA')
 
-            def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 2)
-                return Function(name='LAMBDA', parameters=arguments.car, expression=arguments.cdr)
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL):  # 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                return UserDefinedProcedure(name='LAMBDA', parameters=args.car, expression=args.cdr)
+
+        class LetProc(Procedure):
+            def __init__(self):
+                super().__init__('LET')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL):  # 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                lexical_env = Environment(*env.copy())
+                assignment = args.car
+                while assignment is not BuiltIns.NIL:
+                    if (assignment.car is BuiltIns.NIL or  # 0 args
+                            args.car.cdr is BuiltIns.NIL or  # 1 arg
+                            args.car.cdr.cdr is not BuiltIns.NIL):  # > 2 arg
+                        raise Error.InvalidNOFArgumentsException(assignment)
+                    lexical_env.bind_var(assignment.car.car, assignment.car.cdr.car.evaluate(env))
+                    assignment = assignment.cdr
+                expression = args.cdr
+                while expression is not BuiltIns.NIL:  # Evaluating expressions in let; return result of last expression
+                    result = expression.car.evaluate(lexical_env)
+                    if expression.cdr is BuiltIns.NIL:
+                        return result
+                    else:
+                        expression = expression.cdr
+
+        class DefparameterFunc(Procedure):
+            def __init__(self):
+                super().__init__('DEFPARAMETER')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                env.bind_var(args.car, args.cdr.car.evaluate(env))
+
+        class DefvarFunc(Procedure):
+            def __init__(self):
+                super().__init__('DEFVAR')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is BuiltIns.NIL or  # 1 arg
+                        args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
+                    raise Error.InvalidNOFArgumentsException(self)
+                try:
+                    env.get_var(args.car)
+                except Error.UndefinedVariableException:  # Bind if isn't already bound
+                    env.bind_var(args.car, args.cdr.car.evaluate(env))
+
+        class PrintProc(Procedure):
+            def __init__(self):
+                super().__init__('PRINT')
+
+            def evaluate(self, env, args):
+                if (args is BuiltIns.NIL or  # 0 args
+                        args.cdr is not BuiltIns.NIL):  # > 1 arg
+                    raise Error.InvalidNOFArgumentsException(self)
+                print(args.car.evaluate(env))
+                return BuiltIns.NIL
 
     global_vars = {
         "NIL": NIL,
         "T": T,
     }
     global_funcs = {
-        "+": BuiltInFunctions.AddFunc(),
-        "-": BuiltInFunctions.DiffFunc(),
-        "*": BuiltInFunctions.ProdFunc(),
-        "/": BuiltInFunctions.QuotFunc(),
-        "CAR": BuiltInFunctions.CarFunc(),
-        "CDR": BuiltInFunctions.CdrFunc(),
-        "CONS": BuiltInFunctions.ConsFunc(),
-        "LIST": BuiltInFunctions.ListFunc(),
-        "DEFUN": BuiltInFunctions.DefunFunc(),
-        "DEFPARAMETER": BuiltInFunctions.DefparameterFunc(),
-        "DEFVAR": BuiltInFunctions.DefvarFunc(),
-        "LET": BuiltInFunctions.LetFunc(),
-        "FUNCTION": BuiltInFunctions.FunctionFunc(),
-        "FUNCALL": BuiltInFunctions.FuncallFunc(),
-        "LAMBDA": BuiltInFunctions.LambdaFunc(),
-        "IF": BuiltInFunctions.IfFunc(),
-        "COND": BuiltInFunctions.CondFunc(),
-        "=": BuiltInFunctions.EqualFunc(),
-        ">": BuiltInFunctions.GreaterThanFunc(),
-        "<": BuiltInFunctions.LessThanFunc(),
-        "NOT": BuiltInFunctions.NotFunc(),
-        "PRINT": BuiltInFunctions.PrintFunc(),
-        "QUOTE": BuiltInFunctions.QuoteFunc(),
+        "CONS": BuiltInProcs.ConsFunc(),
+        "CAR": BuiltInProcs.CarFunc(),
+        "CDR": BuiltInProcs.CdrFunc(),
+        "LIST": BuiltInProcs.ListFunc(),
+        "+": BuiltInProcs.AddProc(),
+        "-": BuiltInProcs.DiffProc(),
+        "*": BuiltInProcs.ProdProc(),
+        "/": BuiltInProcs.QuotProc(),
+        ">": BuiltInProcs.GreaterThanProc(),
+        "<": BuiltInProcs.LessThanProc(),
+        "=": BuiltInProcs.EqualProc(),
+        "NOT": BuiltInProcs.NotProc(),
+        "IF": BuiltInProcs.IfProc(),
+        "COND": BuiltInProcs.CondProc(),
+        "QUOTE": BuiltInProcs.QuoteProc(),
+        "DEFUN": BuiltInProcs.DefunProc(),
+        "FUNCALL": BuiltInProcs.FuncallProc(),
+        "FUNCTION": BuiltInProcs.FunctionProc(),
+        "LAMBDA": BuiltInProcs.LambdaProc(),
+        "LET": BuiltInProcs.LetProc(),
+        "DEFPARAMETER": BuiltInProcs.DefparameterFunc(),
+        "DEFVAR": BuiltInProcs.DefvarFunc(),
+        "PRINT": BuiltInProcs.PrintProc(),
     }
     global_env = Environment(global_vars, global_funcs)
 
     @staticmethod
     def is_symbol_globally_bound(symbol: Symbol) -> bool:
-        return BuiltIns.global_env.func_bindings.get(symbol.name, None) is not None or \
-            BuiltIns.global_env.var_bindings.get(symbol.name, None) is not None
+        return BuiltIns.global_env.proc_bindings.get(symbol.value, None) is not None or \
+            BuiltIns.global_env.var_bindings.get(symbol.value, None) is not None
 
 
 class Parser:
@@ -546,65 +611,45 @@ class Parser:
     def exit_atom_build(self):
         if len(self.symbol_build) > 0:
             if self.string_building:
-                atom = str(self.symbol_build)
+                atom = BuiltIns.String(self.symbol_build)
                 self.string_building = False
             # TODO: Fix parsing quoting & functioning bug
             elif self.symbol_build.startswith("'"):
                 self.cons_builder.start_list()
-                self.cons_builder.add(BuiltIns.Symbol('QUOTE'))
+                self.cons_builder.add(Symbol('QUOTE'))
                 self.symbol_build = self.symbol_build[1:]
                 self.exit_atom_build()
                 self.cons_builder.close_list()
                 return
             elif self.symbol_build.startswith("#'"):
                 self.cons_builder.start_list()
-                self.cons_builder.add(BuiltIns.Symbol('FUNCTION'))
+                self.cons_builder.add(Symbol('FUNCTION'))
                 self.symbol_build = self.symbol_build[2:]
                 self.exit_atom_build()
                 self.cons_builder.close_list()
                 return
             else:
                 try:
-                    atom = int(self.symbol_build)
+                    atom = BuiltIns.Number(int(self.symbol_build))
                 except ValueError:
                     try:
-                        atom = float(self.symbol_build)
+                        atom = BuiltIns.Number(float(self.symbol_build))
                     except ValueError:
-                        atom = BuiltIns.Symbol(self.symbol_build.upper())
+                        atom = Symbol(self.symbol_build.upper())
             # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
             self.symbol_build = ''
 
 
-class Evaluator:
+class PyLispInterpreter:
     @staticmethod
-    def evaluate(obj, env: Environment):
-        if obj is BuiltIns.NIL or type(obj) is int or type(obj) is float or type(obj) is str:
-            # SelfEvalObjs
-            return obj
-        elif type(obj) is BuiltIns.Symbol:
-            # Should only be a Symbol representing a variable name;
-            # Function names should be evaluated by `FUNCTION` in (function x), not evaluated as a Symbol
-            try:
-                return env.get_var(obj)
-            except KeyError:
-                raise Error.UndefinedVariableException(obj)
-        elif type(obj) is Cons:
-            # (func . args)
-            if type(obj.car) is not BuiltIns.Symbol:
-                raise Error.IllegalFunctionCallException(obj)
-            try:
-                function = env.get_func(obj.car)
-            except KeyError:
-                raise Error.UndefinedFunctionException(obj)
-            arguments = obj.cdr
-            try:
-                return function.call(arguments, env)
-            except AttributeError:
-                raise Error.IllegalFunctionCallException(obj)
-        else:
-            raise Exception(obj)
+    def run(code: str):
+        run_env = Environment(*BuiltIns.global_env.copy())
+        parser = Parser()
+        parsed = parser.parse(code)
+        for exp in parsed:
+            exp.evaluate(run_env)
 
 
 c = """
@@ -634,7 +679,7 @@ c = """
         (print (+ x y))
         (print (- y x))
         x))
-        
+
 (print (function print))
 ;(print (function (quote print)))
 (defun p () 0)
@@ -673,17 +718,5 @@ c = """
 (print (quote (a b c)))
 (print '(a b c))
 """
-
-
-class PyLispInterpreter:
-    @staticmethod
-    def run(code: str):
-        run_env = Environment(*BuiltIns.global_env.copy())
-        parser = Parser()
-        evaluator = Evaluator()
-        parsed = parser.parse(code)
-        for exp in parsed:
-            evaluator.evaluate(exp, run_env)
-
 
 PyLispInterpreter.run(c)
