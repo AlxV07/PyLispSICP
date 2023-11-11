@@ -48,16 +48,27 @@ class Environment:
         self.func_bindings = func_bindings
 
     def bind_var(self, symbol, item):
+        if type(symbol) is not BuiltIns.Symbol:
+            raise Error.IllegalVariableNameException(symbol)
+        if BuiltIns.is_symbol_globally_bound(symbol):
+            raise Error.SymbolLockBoundViolationException(symbol)
         self.var_bindings[symbol.name] = item
 
     def bind_func(self, symbol, item):
+        if type(symbol) is not BuiltIns.Symbol:
+            raise Error.IllegalFunctionNameException(symbol)
+        if BuiltIns.is_symbol_globally_bound(symbol):
+            raise Error.SymbolLockBoundViolationException(symbol)
         self.func_bindings[symbol.name] = item
 
     def get_var(self, symbol):
         return self.var_bindings[symbol.name]
 
     def get_func(self, symbol):
-        return self.func_bindings[symbol.name]
+        try:
+            return self.func_bindings[symbol.name]
+        except KeyError:
+            raise Error.UndefinedFunctionException
 
     def copy(self):
         return self.var_bindings.copy(), self.func_bindings.copy()
@@ -81,7 +92,7 @@ class Function:
             parameter = parameter.cdr
             argument = argument.cdr
         if parameter is not BuiltIns.NIL or argument is not BuiltIns.NIL:
-            raise Error.InvalidNOFArgumentsException
+            raise Error.InvalidNOFArgumentsException(self)
         e = self.expression
         while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
             result = Evaluator.evaluate(e.car, lexical_env)
@@ -117,8 +128,7 @@ class BuiltIns:
             def __init__(self, name):
                 super().__init__(name, None, None)
 
-            @staticmethod
-            def at_least_args_check(arguments: Cons, nof_args: int):
+            def at_least_args_check(self, arguments: Cons, nof_args: int):
                 if nof_args == 0: return
                 arg = arguments
                 count = 0
@@ -127,20 +137,19 @@ class BuiltIns:
                     if count == nof_args:
                         return
                     arg = arg.cdr
-                raise Error.InvalidNOFArgumentsException
+                raise Error.InvalidNOFArgumentsException(self)
 
-            @staticmethod
-            def exact_args_check(arguments: Cons, nof_args: int):
+            def exact_args_check(self, arguments: Cons, nof_args: int):
                 arg = arguments
                 count = 0
                 while arg is not BuiltIns.NIL:
                     count += 1
                     if count == nof_args:
                         if arg.cdr is not BuiltIns.NIL:
-                            raise Error.InvalidNOFArgumentsException
+                            raise Error.InvalidNOFArgumentsException(self)
                         return
                     arg = arg.cdr
-                raise Error.InvalidNOFArgumentsException
+                raise Error.InvalidNOFArgumentsException(self)
 
             def call(self, arguments: Cons, env: Environment):
                 pass
@@ -265,10 +274,6 @@ class BuiltIns:
 
             def call(self, arguments: Cons, env: Environment):
                 self.at_least_args_check(arguments, 3)
-                if type(arguments.car) is not BuiltIns.Symbol:
-                    raise Error.IllegalFunctionNameException
-                if BuiltIns.is_symbol_globally_bound(arguments.car):
-                    raise Error.SymbolLockBoundViolationException
                 env.bind_func(arguments.car, Function(name=arguments.car, parameters=arguments.cdr.car,
                                                       expression=arguments.cdr.cdr))
                 return arguments.car  # Func name
@@ -279,10 +284,7 @@ class BuiltIns:
 
             def call(self, arguments: Cons, env: Environment):
                 self.exact_args_check(arguments, 1)
-                try:
-                    return env.get_func(arguments.car)
-                except KeyError:
-                    raise Error.UndefinedFunctionException
+                return env.get_func(arguments.car)
 
         class FuncallFunc(BuiltInFunction):
             def __init__(self):
@@ -365,10 +367,6 @@ class BuiltIns:
                 super().__init__('DEFPARAMETER')
 
             def call(self, arguments: Cons, env: Environment):
-                if type(arguments.car) is not BuiltIns.Symbol:
-                    raise Error.IllegalVariableNameException
-                if BuiltIns.is_symbol_globally_bound(arguments.car):
-                    raise Error.SymbolLockBoundViolationException
                 self.exact_args_check(arguments, 2)
                 env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
 
@@ -377,10 +375,6 @@ class BuiltIns:
                 super().__init__('DEFVAR')
 
             def call(self, arguments: Cons, env: Environment):
-                if type(arguments.car) is not BuiltIns.Symbol:
-                    raise Error.IllegalVariableNameException
-                if BuiltIns.is_symbol_globally_bound(arguments.car):
-                    raise Error.SymbolLockBoundViolationException
                 self.exact_args_check(arguments, 2)
                 try:
                     env.get_var(arguments.car)
@@ -554,6 +548,7 @@ class Parser:
             if self.string_building:
                 atom = str(self.symbol_build)
                 self.string_building = False
+            # TODO: Fix parsing quoting & functioning bug
             elif self.symbol_build.startswith("'"):
                 self.cons_builder.start_list()
                 self.cons_builder.add(BuiltIns.Symbol('QUOTE'))
@@ -607,7 +602,7 @@ class Evaluator:
             try:
                 return function.call(arguments, env)
             except AttributeError:
-                raise Error.IllegalFunctionCallException
+                raise Error.IllegalFunctionCallException(obj)
         else:
             raise Exception(obj)
 
@@ -674,6 +669,9 @@ c = """
 (print (x 
     (lambda (a) (+ a 3))
 ))
+
+(print (quote (a b c)))
+(print '(a b c))
 """
 
 
@@ -686,3 +684,6 @@ class PyLispInterpreter:
         parsed = parser.parse(code)
         for exp in parsed:
             evaluator.evaluate(exp, run_env)
+
+
+PyLispInterpreter.run(c)
