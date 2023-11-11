@@ -393,6 +393,19 @@ class BuiltIns:
                 except KeyError:
                     env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
 
+        class CondFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('COND')
+
+            def call(self, arguments: Cons, env: Environment):
+                argument = arguments
+                while argument is not BuiltIns.NIL:
+                    condition = argument.car.car
+                    if Evaluator.evaluate(condition, env) is BuiltIns.T:
+                        return Evaluator.evaluate(argument.car.cdr.car, env)
+                    argument = argument.cdr
+                return BuiltIns.NIL
+
     global_vars = {
         "NIL": NIL,
         "T": T,
@@ -409,13 +422,12 @@ class BuiltIns:
         "DEFUN": BuiltInFunctions.DefunFunc(),
         "DEFPARAMETER": BuiltInFunctions.DefparameterFunc(),
         "DEFVAR": BuiltInFunctions.DefvarFunc(),
-        "SETQ": None,
         "LET": BuiltInFunctions.LetFunc(),
         "FUNCTION": BuiltInFunctions.FunctionFunc(),
         "FUNCALL": BuiltInFunctions.FuncallFunc(),
         "LAMBDA": None,
         "IF": BuiltInFunctions.IfFunc(),
-        "COND": None,
+        "COND": BuiltInFunctions.CondFunc(),
         "=": BuiltInFunctions.EqualFunc(),
         ">": BuiltInFunctions.GreaterThanFunc(),
         "<": BuiltInFunctions.LessThanFunc(),
@@ -639,6 +651,11 @@ parsed = parser.parse("""
 (print o)
 (defvar o 128)
 (print o)
+
+(print (cond
+((< 1 0) "sup")
+((> 1 0) "nope")
+))
 """)
 run_env = Environment(*BuiltIns.global_env.copy())
 for exp in parsed: evaluator.evaluate(exp, run_env)
