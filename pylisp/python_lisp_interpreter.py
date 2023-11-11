@@ -330,7 +330,7 @@ class BuiltIns:
 
             def call(self, arguments: Cons, env: Environment):
                 self.exact_args_check(arguments, 1)
-                print(evaluator.evaluate(arguments.car, env))
+                print(Evaluator.evaluate(arguments.car, env))
                 return BuiltIns.NIL
 
         class LetFunc(BuiltInFunction):
