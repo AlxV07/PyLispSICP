@@ -37,6 +37,14 @@ class Symbol(Object):
         return str(self.value)
 
 
+class SelfEvaluatingObject(Object):
+    def evaluate(self, env):
+        return self
+
+    def __str__(self):
+        return str(self.value)
+
+
 class Cons(Object):
     def __init__(self, car, cdr):
         super().__init__('CONS')
@@ -130,12 +138,6 @@ class UserDefinedProcedure(Procedure):
 
 
 class BuiltIns:
-    class SelfEvaluatingObject(Object):
-        def evaluate(self, env):
-            return self
-
-        def __str__(self):
-            return str(self.value)
 
     class NilClass(SelfEvaluatingObject):
         def __init__(self):
