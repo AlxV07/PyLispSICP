@@ -10,8 +10,6 @@
 # If the car of the form a symbol, it is the name of a function form or a macro form to expand to.
 # Otherwise, the car of the form is a lambda expression and the compound form is a lambda form.
 
-# TODO: Finish BuiltInFuncs
-
 class Error:
     # Lisp errors
     class IllegalFunctionNameException(Exception): pass
@@ -78,12 +76,12 @@ class Function:
         lexical_env = Environment(*env.copy())  # Env to run function inside
         parameter = self.parameters
         argument = arguments
-        while parameter is not BuiltIns.NIL:  # Binding values to parameters
-            if argument is BuiltIns.NIL:
-                raise Error.InvalidNOFArgumentsException
+        while parameter is not BuiltIns.NIL and argument is not BuiltIns.NIL:  # Binding values to parameters
             lexical_env.bind_var(parameter.car, Evaluator.evaluate(argument.car, env))
             parameter = parameter.cdr
             argument = argument.cdr
+        if parameter is not BuiltIns.NIL or argument is not BuiltIns.NIL:
+            raise Error.InvalidNOFArgumentsException
         e = self.expression
         while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
             result = Evaluator.evaluate(e.car, lexical_env)
@@ -267,7 +265,7 @@ class BuiltIns:
                 super().__init__('DEFUN')
 
             def call(self, arguments: Cons, env: Environment):
-                self.at_least_args_check(arguments, 2)
+                self.at_least_args_check(arguments, 3)
                 if type(arguments.car) is not BuiltIns.Symbol:
                     raise Error.IllegalFunctionNameException
                 if BuiltIns.is_symbol_globally_bound(arguments.car):
@@ -293,10 +291,7 @@ class BuiltIns:
 
             def call(self, arguments: Cons, env: Environment):
                 self.at_least_args_check(arguments, 1)
-                try:
-                    return Evaluator.evaluate(arguments.car, env).call(arguments.cdr, env)
-                except:
-                    raise Error.IllegalFunctionCallException
+                return Evaluator.evaluate(arguments.car, env).call(arguments.cdr, env)
 
         class ConsFunc(BuiltInFunction):
             def __init__(self):
@@ -406,6 +401,14 @@ class BuiltIns:
                     argument = argument.cdr
                 return BuiltIns.NIL
 
+        class LambdaFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('LAMBDA')
+
+            def call(self, arguments: Cons, env: Environment):
+                self.at_least_args_check(arguments, 2)
+                return Function(name='LAMBDA', parameters=arguments.car, expression=arguments.cdr)
+
     global_vars = {
         "NIL": NIL,
         "T": T,
@@ -425,7 +428,7 @@ class BuiltIns:
         "LET": BuiltInFunctions.LetFunc(),
         "FUNCTION": BuiltInFunctions.FunctionFunc(),
         "FUNCALL": BuiltInFunctions.FuncallFunc(),
-        "LAMBDA": None,
+        "LAMBDA": BuiltInFunctions.LambdaFunc(),
         "IF": BuiltInFunctions.IfFunc(),
         "COND": BuiltInFunctions.CondFunc(),
         "=": BuiltInFunctions.EqualFunc(),
@@ -559,6 +562,13 @@ class Parser:
                 self.exit_atom_build()
                 self.cons_builder.close_list()
                 return
+            elif self.symbol_build.startswith("#'"):
+                self.cons_builder.start_list()
+                self.cons_builder.add(BuiltIns.Symbol('FUNCTION'))
+                self.symbol_build = self.symbol_build[2:]
+                self.exit_atom_build()
+                self.cons_builder.close_list()
+                return
             else:
                 try:
                     atom = int(self.symbol_build)
@@ -655,6 +665,17 @@ parsed = parser.parse("""
 (print (cond
 ((< 1 0) "sup")
 ((> 1 0) "nope")
+))
+
+(defun x (func)
+    (funcall func 5))
+(defun a (p) (+ p 1))
+(defun b (p) (+ p 2))
+(print (x #'a))
+(print (x #'b))
+
+(print (x 
+    (lambda (a) (+ a 3))
 ))
 """)
 run_env = Environment(*BuiltIns.global_env.copy())
