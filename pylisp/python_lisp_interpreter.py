@@ -16,6 +16,8 @@ class Error:
     # Lisp errors
     class IllegalFunctionNameException(Exception): pass
 
+    class IllegalVariableNameException(Exception): pass
+
     class UnmatchedParenthesesException(Exception): pass
 
     class UndefinedFunctionException(Exception): pass
@@ -142,6 +144,9 @@ class BuiltIns:
                         return
                     arg = arg.cdr
                 raise Error.InvalidNOFArgumentsException
+
+            def call(self, arguments: Cons, env: Environment):
+                pass
 
         class AddFunc(BuiltInFunction):
             def __init__(self):
@@ -343,9 +348,7 @@ class BuiltIns:
                 lexical_env = Environment(*env.copy())
                 parameter = arguments.car
                 while parameter is not BuiltIns.NIL:
-                    binding = parameter.car
-                    self.exact_args_check(binding, 2)
-                    lexical_env.bind_var(binding.car, Evaluator.evaluate(binding.cdr.car, env))
+                    BuiltIns.global_funcs['DEFPARAMETER'].call(parameter.car, lexical_env)
                     parameter = parameter.cdr
                 e = arguments.cdr
                 while e is not BuiltIns.NIL:  # Evaluating expressions in function; return result of last evaluation
@@ -354,6 +357,41 @@ class BuiltIns:
                         return result
                     else:
                         e = e.cdr
+
+        class QuoteFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('QUOTE')
+
+            def call(self, arguments: Cons, env: Environment):
+                self.exact_args_check(arguments, 1)
+                return arguments.car
+
+        class DefparameterFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('DEFPARAMETER')
+
+            def call(self, arguments: Cons, env: Environment):
+                if type(arguments.car) is not BuiltIns.Symbol:
+                    raise Error.IllegalVariableNameException
+                if BuiltIns.is_symbol_globally_bound(arguments.car):
+                    raise Error.SymbolLockBoundViolationException
+                self.exact_args_check(arguments, 2)
+                env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
+
+        class DefvarFunc(BuiltInFunction):
+            def __init__(self):
+                super().__init__('DEFVAR')
+
+            def call(self, arguments: Cons, env: Environment):
+                if type(arguments.car) is not BuiltIns.Symbol:
+                    raise Error.IllegalVariableNameException
+                if BuiltIns.is_symbol_globally_bound(arguments.car):
+                    raise Error.SymbolLockBoundViolationException
+                self.exact_args_check(arguments, 2)
+                try:
+                    env.get_var(arguments.car)
+                except KeyError:
+                    env.bind_var(arguments.car, Evaluator.evaluate(arguments.cdr.car, env))
 
     global_vars = {
         "NIL": NIL,
@@ -364,12 +402,13 @@ class BuiltIns:
         "-": BuiltInFunctions.DiffFunc(),
         "*": BuiltInFunctions.ProdFunc(),
         "/": BuiltInFunctions.QuotFunc(),
-        "CONS": BuiltInFunctions.ConsFunc(),
         "CAR": BuiltInFunctions.CarFunc(),
         "CDR": BuiltInFunctions.CdrFunc(),
+        "CONS": BuiltInFunctions.ConsFunc(),
         "LIST": BuiltInFunctions.ListFunc(),
         "DEFUN": BuiltInFunctions.DefunFunc(),
-        "DEFVAR": None,
+        "DEFPARAMETER": BuiltInFunctions.DefparameterFunc(),
+        "DEFVAR": BuiltInFunctions.DefvarFunc(),
         "SETQ": None,
         "LET": BuiltInFunctions.LetFunc(),
         "FUNCTION": BuiltInFunctions.FunctionFunc(),
@@ -382,7 +421,7 @@ class BuiltIns:
         "<": BuiltInFunctions.LessThanFunc(),
         "NOT": BuiltInFunctions.NotFunc(),
         "PRINT": BuiltInFunctions.PrintFunc(),
-        "QUOTE": None,
+        "QUOTE": BuiltInFunctions.QuoteFunc(),
     }
     global_env = Environment(global_vars, global_funcs)
 
@@ -451,7 +490,6 @@ class Parser:
         self.cons_builder = self.ConsBuilder()
         self.result = []
         self.symbol_build = ''
-        self.prev_symbol = ''
         self.string_building = False
 
     def parse(self, code: str) -> list:
@@ -459,7 +497,6 @@ class Parser:
         self.cons_builder.clear()
         self.result.clear()
         self.symbol_build = ''
-        self.prev_symbol = ''
         self.string_building = False
 
         # Case-insensitive names, comments begin w/ `;`
@@ -500,13 +537,16 @@ class Parser:
 
     def exit_atom_build(self):
         if len(self.symbol_build) > 0:
-            # `if val.startswith("#")...
-
-            # `if val.startswith("'")...
-
             if self.string_building:
                 atom = str(self.symbol_build)
                 self.string_building = False
+            elif self.symbol_build.startswith("'"):
+                self.cons_builder.start_list()
+                self.cons_builder.add(BuiltIns.Symbol('QUOTE'))
+                self.symbol_build = self.symbol_build[1:]
+                self.exit_atom_build()
+                self.cons_builder.close_list()
+                return
             else:
                 try:
                     atom = int(self.symbol_build)
@@ -518,7 +558,6 @@ class Parser:
             # If `atom` is outside list:
             if not self.cons_builder.add(atom):
                 self.result.append(atom)
-            self.prev_symbol = self.symbol_build
             self.symbol_build = ''
 
 
@@ -581,7 +620,25 @@ parsed = parser.parse("""
         (print (+ x y))
         (print (- y x))
         x))
+        
+(print (function print))
+;(print (function (quote print)))
+(defun p () 0)
+;(print p)
+(print 'p)
+(print (function p))
+
+(defparameter p 124)
+(print p)
+(defparameter p 125)
+(print p)
+(defvar p 126)
+(print p)
+
+(defvar o 127)
+(print o)
+(defvar o 128)
+(print o)
 """)
 run_env = Environment(*BuiltIns.global_env.copy())
-for exp in parsed:
-    evaluator.evaluate(exp, run_env)
+for exp in parsed: evaluator.evaluate(exp, run_env)
