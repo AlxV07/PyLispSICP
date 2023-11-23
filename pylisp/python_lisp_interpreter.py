@@ -228,12 +228,10 @@ class BuiltIns:
                 super().__init__('+')
 
             def evaluate(self, env, args):
-                total = BuiltIns.Number(0)
-                arg = args
-                while arg is not BuiltIns.NIL:
-                    total += arg.car.evaluate(env)
-                    arg = arg.cdr
-                return total
+                if args is BuiltIns.NIL:
+                    return BuiltIns.Number(0)
+                else:
+                    return args.car.evaluate(env) + BuiltIns.global_funcs.get("+").evaluate(env, args.cdr)
 
         class DiffProc(Procedure):
             def __init__(self):
@@ -256,12 +254,10 @@ class BuiltIns:
                 super().__init__('*')
 
             def evaluate(self, env, args):
-                total = BuiltIns.Number(1)
-                arg = args
-                while arg is not BuiltIns.NIL:
-                    total *= arg.car.evaluate(env)
-                    arg = arg.cdr
-                return total
+                if args is BuiltIns.NIL:
+                    return BuiltIns.Number(1)
+                else:
+                    return args.car.evaluate(env) * BuiltIns.global_funcs.get("*").evaluate(env, args.cdr)
 
         class QuotProc(Procedure):
             def __init__(self):
@@ -718,7 +714,8 @@ c = """
 ))
 
 (print (quote (a b c)))
-(print '(a b c))
+;(print '(a b c))
+(print (- 3 1 2))
 """
 
 PyLispInterpreter.run(c)
