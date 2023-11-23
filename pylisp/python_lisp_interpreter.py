@@ -524,38 +524,52 @@ class Parser:
             (1 (2 3))         ((2 3) NIL)
             (1 ((2 3) 4))         (4 NIL)
             """
-            self.q = []
+            self.cons_q = []
+            self.level = 0
+            self.quote_q = []
 
         def empty(self):
-            return len(self.q) == 0
+            return len(self.cons_q) == 0
 
         def add(self, leaf):
-            if len(self.q) == 0:  # Not in any list
+            if len(self.cons_q) == 0:  # Not in any list
                 return False
-            root_cons, tar_cons = self.q[-1]
+            root_cons, tar_cons = self.cons_q[-1]
             if tar_cons.car is None:  # (None . NIL)
-                # Should only be reached on 1st call immediately after `start_list`
+                # Should only be reached on 1st call immediately after `open_list`
                 tar_cons.car = leaf
             else:  # (x . NIL)
                 assert tar_cons.cdr is BuiltIns.NIL
                 tar_cons.cdr = Cons(car=leaf, cdr=BuiltIns.NIL)  # (x . (leaf . NIL))
-                self.q[-1] = root_cons, tar_cons.cdr
+                self.cons_q[-1] = root_cons, tar_cons.cdr
+                if len(self.quote_q) > 0 and self.level == self.quote_q[-1]:
+                    self.quote_q.pop()
+                    self.close_list()
             return True
 
-        def start_list(self):
+        def quote(self):
+            self.open_list()
+            self.add(Symbol('QUOTE'))
+            self.quote_q.append(self.level)
+
+        def open_list(self):
+            self.level += 1
             cons = Cons(car=None, cdr=BuiltIns.NIL)
-            self.q.append((cons, cons))
+            self.cons_q.append((cons, cons))
 
         def close_list(self):
-            cons, _ = self.q.pop()
+            self.level -= 1
+            cons, _ = self.cons_q.pop()
             if cons.car is None:  # Empty list
                 cons = BuiltIns.NIL
-            if len(self.q) == 0:
+            if len(self.cons_q) == 0:
                 return cons
             self.add(cons)
 
         def clear(self):
-            self.q.clear()
+            self.cons_q.clear()
+            self.level = 0
+            self.quote_q.clear()
 
     def __init__(self):
         self.cons_builder = self.ConsBuilder()
@@ -586,7 +600,7 @@ class Parser:
                     self.exit_atom_build()
                 elif char == '(':
                     self.exit_atom_build()
-                    self.cons_builder.start_list()
+                    self.cons_builder.open_list()
                 elif char == ')':
                     self.exit_atom_build()
                     try:
@@ -595,6 +609,12 @@ class Parser:
                         raise Error.UnmatchedParenthesesException()
                     if returned_list is not None:
                         self.result.append(returned_list)
+                elif char == '\'':
+                    if self.symbol_build == '#':  # Rough fix
+                        self.enter_atom_build(char)
+                    else:
+                        self.cons_builder.quote()
+
                 else:
                     self.enter_atom_build(char)
         if self.string_building:
@@ -611,16 +631,8 @@ class Parser:
             if self.string_building:
                 atom = BuiltIns.String(self.symbol_build)
                 self.string_building = False
-            # TODO: Fix parsing quoting & functioning bug
-            elif self.symbol_build.startswith("'"):
-                self.cons_builder.start_list()
-                self.cons_builder.add(Symbol('QUOTE'))
-                self.symbol_build = self.symbol_build[1:]
-                self.exit_atom_build()
-                self.cons_builder.close_list()
-                return
             elif self.symbol_build.startswith("#'"):
-                self.cons_builder.start_list()
+                self.cons_builder.open_list()
                 self.cons_builder.add(Symbol('FUNCTION'))
                 self.symbol_build = self.symbol_build[2:]
                 self.exit_atom_build()
@@ -714,7 +726,7 @@ c = """
 ))
 
 (print (quote (a b c)))
-;(print '(a b c))
+(print '(a b c))
 (print (- 3 1 2))
 """
 
