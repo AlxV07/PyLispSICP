@@ -221,6 +221,12 @@ class BuiltIns:
                 super().__init__('LIST')
 
             def evaluate(self, env, args):
+                if args is BuiltIns.NIL:
+                    return args
+                a = args
+                while a is not BuiltIns.NIL:
+                    a.car = a.car.evaluate(env)
+                    a = a.cdr
                 return args
 
         class AddProc(Procedure):
@@ -652,7 +658,7 @@ class Parser:
             self.symbol_build = ''
 
 
-class PyLispInterpreter:
+class CommonPyLispInterpreter:
     @staticmethod
     def run(code: str):
         run_env = Environment(*BuiltIns.global_env.copy())
@@ -730,4 +736,4 @@ c = """
 (print (- 3 1 2))
 """
 
-PyLispInterpreter.run(c)
+CommonPyLispInterpreter.run(c)
