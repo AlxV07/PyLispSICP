@@ -59,7 +59,15 @@ class Cons(Object):
     def __str__(self):
         if self.cdr is BuiltIns.NIL:
             return f'({self.car})'
-        return f'({self.car} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{self.cdr})'
+        s = []
+        p = self
+        while p is not BuiltIns.NIL:
+            if type(p) is not Cons:
+                s.append(str(p))
+                break
+            s.append(str(p.car))
+            p = p.cdr
+        return f'({" ".join(s)})'
 
 
 class Environment:
@@ -175,8 +183,7 @@ class BuiltIns:
                         args.cdr is BuiltIns.NIL or  # 1 arg
                         args.cdr.cdr is not BuiltIns.NIL):  # > 2 args
                     raise Error.InvalidNOFArgumentsException(self)
-                return Cons(args.car.evaluate(env),
-                            args.cdr.car.evaluate(env))
+                return Cons(args.car.evaluate(env), args.cdr.car.evaluate(env))
 
         class CarFunc(Procedure):
             def __init__(self):
@@ -619,9 +626,8 @@ c = """
 
 (newline)
 
-(define y (list x 1 2 3 4))
+(define y (list x (+ 0.5 0.5) (cons 2.1 2.5) 3 4))
 (display y)
-
 """
 
 SchemePyLispInterpreter.run(c)

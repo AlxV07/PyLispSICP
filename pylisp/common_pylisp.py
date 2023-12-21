@@ -59,7 +59,15 @@ class Cons(Object):
     def __str__(self):
         if self.cdr is BuiltIns.NIL:
             return f'({self.car})'
-        return f'({self.car} {"" if type(self.car) is Cons or type(self.cdr) is Cons else ". "}{self.cdr})'
+        s = []
+        p = self
+        while p is not BuiltIns.NIL:
+            if type(p) is not Cons:
+                s.append(str(p))
+                break
+            s.append(str(p.car))
+            p = p.cdr
+        return f'({" ".join(s)})'
 
 
 class Environment:
